@@ -1,3 +1,4 @@
 runtime/
 game-path.txt
 *.log
+dist/remote-verification.zip

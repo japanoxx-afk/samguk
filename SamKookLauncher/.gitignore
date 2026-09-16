@@ -6,3 +6,4 @@ accounts.db
 accounts.db.bak
 accounts.db.tmp
 ProtocolTests.exe
+server-address.txt

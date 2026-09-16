@@ -17,8 +17,8 @@ static class ProtocolTests {
     type.GetMethod("Start").Invoke(server,null);
     try {
       using(var client=new TcpClient("127.0.0.1",7104)) using(var stream=client.GetStream()) {
-        var bootstrap=new byte[2]; ReadAll(stream,bootstrap);
-        if(bootstrap[0]!=2||bootstrap[1]!=0) throw new Exception("Bad bootstrap");
+        var bootstrap=new byte[4]; ReadAll(stream,bootstrap);
+        if(bootstrap[0]!=0xE1||bootstrap[1]!=0x05||bootstrap[2]!=4||bootstrap[3]!=0) throw new Exception("Bad bootstrap");
         var create=Build(0x2A,false); stream.Write(create,0,create.Length); var response=new byte[8]; ReadAll(stream,response);
         if(response[1]!=0x2A || response[4]!=0) throw new Exception("Create failed: "+BitConverter.ToString(response));
         var login=Build(0x36,true); stream.Write(login,0,login.Length); ReadAll(stream,response);

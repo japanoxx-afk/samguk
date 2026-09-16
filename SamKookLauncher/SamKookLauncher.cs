@@ -15,8 +15,8 @@ using System.Windows.Forms;
 using System.Reflection;
 
 [assembly: AssemblyTitle("SamKook FreeNet Launcher")]
-[assembly: AssemblyVersion("1.1.0.0")]
-[assembly: AssemblyFileVersion("1.1.0.0")]
+[assembly: AssemblyVersion("1.2.0.0")]
+[assembly: AssemblyFileVersion("1.2.0.0")]
 
 namespace SamKookFreeNet {
   static class Program {
@@ -29,9 +29,10 @@ namespace SamKookFreeNet {
   }
 
   sealed class LauncherForm : Form {
-    const string LauncherVersion = "1.1.0";
+    const string LauncherVersion = "1.2.0";
     const string DefaultGame = @"C:\Users\seo\Downloads\DGGL\Games\SamKook_Win\SamKook.exe";
     readonly TextBox gamePath = new TextBox();
+    readonly TextBox serverAddress = new TextBox();
     readonly TextBox log = new TextBox();
     readonly Button play = new Button();
     readonly Button serverButton = new Button();
@@ -41,8 +42,8 @@ namespace SamKookFreeNet {
 
     public LauncherForm() {
       Text = "삼국통일 FreeNet 런처";
-      ClientSize = new Size(720, 440);
-      MinimumSize = new Size(650, 400);
+      ClientSize = new Size(720, 500);
+      MinimumSize = new Size(650, 460);
       Font = new Font("맑은 고딕", 10F);
       StartPosition = FormStartPosition.CenterScreen;
 
@@ -54,17 +55,23 @@ namespace SamKookFreeNet {
       var browse = new Button { Text = "찾기", Location = new Point(615, 117), Size = new Size(80, 31) };
       browse.Click += Browse;
 
-      serverButton.Text = "로컬 서버 시작"; serverButton.Location = new Point(20, 166); serverButton.Size = new Size(150, 42);
-      play.Text = "게임 실행"; play.Location = new Point(180, 166); play.Size = new Size(150, 42); play.Font = new Font(Font, FontStyle.Bold);
-      update.Text = "런처 업데이트"; update.Location = new Point(340, 166); update.Size = new Size(150, 42);
+      var serverLabel = new Label { Text = "접속 서버 IP", AutoSize = true, Location = new Point(20, 162) };
+      serverAddress.Text = LoadSetting("server-address.txt","127.0.0.1"); serverAddress.Location = new Point(125,157); serverAddress.Size = new Size(180,27);
+      var serverHint = new Label { Text = "A PC: 127.0.0.1  /  B PC: A PC의 LAN·VPN IPv4", AutoSize = true, ForeColor = Color.DimGray, Location = new Point(315,162) };
+      var hosts = new Button { Text = "hosts 파일 열기", Location = new Point(545,190), Size = new Size(150,36) };
+      hosts.Click += OpenHostsFile;
+
+      serverButton.Text = "로컬 서버 시작"; serverButton.Location = new Point(20, 194); serverButton.Size = new Size(150, 42);
+      play.Text = "게임 실행"; play.Location = new Point(180, 194); play.Size = new Size(150, 42); play.Font = new Font(Font, FontStyle.Bold);
+      update.Text = "런처 업데이트"; update.Location = new Point(340, 194); update.Size = new Size(150, 42);
       serverButton.Click += ToggleServer;
       play.Click += StartGame;
       update.Click += async (s,e) => await CheckUpdate();
 
-      log.Location = new Point(20, 225); log.Size = new Size(675, 190); log.Multiline = true; log.ReadOnly = true;
+      log.Location = new Point(20, 252); log.Size = new Size(675, 222); log.Multiline = true; log.ReadOnly = true;
       log.ScrollBars = ScrollBars.Vertical; log.BackColor = Color.FromArgb(25,25,28); log.ForeColor = Color.Gainsboro;
       log.Font = new Font("Consolas", 9F);
-      Controls.AddRange(new Control[] { title, version, hint, pathLabel, gamePath, browse, serverButton, play, update, log });
+      Controls.AddRange(new Control[] { title, version, hint, pathLabel, gamePath, browse, serverLabel, serverAddress, serverHint, hosts, serverButton, play, update, log });
       server = new LobbyServer(WriteLog);
       FormClosing += (s,e) => server.Stop();
       WriteLog("런처 v"+LauncherVersion+" 준비됨. 로컬 서버 포트: TCP 7104");
@@ -74,6 +81,8 @@ namespace SamKookFreeNet {
       var p = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "game-path.txt");
       try { return File.Exists(p) ? File.ReadAllText(p).Trim() : DefaultGame; } catch { return DefaultGame; }
     }
+    string LoadSetting(string name,string fallback) { try { var p=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,name); return File.Exists(p)?File.ReadAllText(p).Trim():fallback; } catch { return fallback; } }
+    void SaveSetting(string name,string value) { try { File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,name),value); } catch { } }
     void SavePath() { try { File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "game-path.txt"), gamePath.Text.Trim()); } catch { } }
     void Browse(object sender, EventArgs e) {
       using (var d = new OpenFileDialog { Filter = "SamKook.exe|SamKook.exe|실행 파일|*.exe", FileName = gamePath.Text })
@@ -85,26 +94,38 @@ namespace SamKookFreeNet {
         serverButton.Text = server.IsRunning ? "로컬 서버 중지" : "로컬 서버 시작";
       } catch (Exception ex) { MessageBox.Show(this, ex.Message, "서버 오류"); }
     }
+    void OpenHostsFile(object sender,EventArgs e) {
+      try {
+        var hosts=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),@"drivers\etc\hosts");
+        Process.Start(new ProcessStartInfo { FileName="notepad.exe", Arguments=Quote(hosts), UseShellExecute=true });
+        WriteLog("hosts 파일을 메모장으로 열었습니다: "+hosts);
+      } catch(Exception ex) { MessageBox.Show(this,ex.Message,"hosts 파일"); }
+    }
     void StartGame(object sender, EventArgs e) {
       try {
         var source = Path.GetFullPath(gamePath.Text.Trim());
         if (!File.Exists(source)) throw new FileNotFoundException("SamKook.exe를 찾을 수 없습니다.", source);
+        IPAddress targetAddress;
+        var targetText=serverAddress.Text.Trim();
+        if(!IPAddress.TryParse(targetText,out targetAddress) || targetAddress.AddressFamily!=AddressFamily.InterNetwork) throw new ArgumentException("접속 서버 IP에 올바른 IPv4 주소를 입력하세요.");
+        if(targetText.Length>13) throw new ArgumentException("이 게임의 주소 저장 공간 제한으로 서버 IP는 13자 이하여야 합니다. LAN·Radmin·Hamachi IPv4를 사용하세요.");
         SavePath();
-        if (!server.IsRunning) { server.Start(); serverButton.Text = "로컬 서버 중지"; }
+        SaveSetting("server-address.txt",targetText);
+        if (IPAddress.IsLoopback(targetAddress) && !server.IsRunning) { server.Start(); serverButton.Text = "로컬 서버 중지"; }
         var runtime = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "runtime");
         Directory.CreateDirectory(runtime);
         var patched = Path.Combine(runtime, "SamKook.FreeNet.exe");
-        PatchServerAddresses(source, patched);
+        PatchServerAddresses(source, patched, targetText);
         Process.Start(new ProcessStartInfo { FileName = patched, WorkingDirectory = Path.GetDirectoryName(source), UseShellExecute = true });
-        WriteLog("게임 실행: 인터넷 플레이 접속을 127.0.0.1:7104로 연결합니다.");
+        WriteLog("게임 실행: 인터넷 플레이 접속을 "+targetText+":7104로 연결합니다.");
       } catch (Exception ex) { MessageBox.Show(this, ex.ToString(), "실행 오류"); }
     }
-    static void PatchServerAddresses(string source, string destination) {
+    static void PatchServerAddresses(string source, string destination, string targetAddress) {
       var data = File.ReadAllBytes(source);
       int changed = 0;
       foreach (var oldAddress in new[] { "210.109.148.16", "211.44.13.187" }) {
         var oldBytes = Encoding.ASCII.GetBytes(oldAddress); var replacement = new byte[oldBytes.Length];
-        var local = Encoding.ASCII.GetBytes("127.0.0.1"); Buffer.BlockCopy(local, 0, replacement, 0, local.Length);
+        var target = Encoding.ASCII.GetBytes(targetAddress); Buffer.BlockCopy(target, 0, replacement, 0, target.Length);
         for (int i=0; i<=data.Length-oldBytes.Length; i++) {
           bool match=true; for(int j=0;j<oldBytes.Length;j++) if(data[i+j]!=oldBytes[j]) { match=false; break; }
           if(match) { Buffer.BlockCopy(replacement,0,data,i,replacement.Length); changed++; i += oldBytes.Length-1; }
@@ -199,13 +220,12 @@ namespace SamKookFreeNet {
     async Task AcceptLoop(CancellationToken token) {
       while(!token.IsCancellationRequested) try {
         var c=await listener.AcceptTcpClientAsync(); lock(clients) clients.Add(c);
-        // The 1999 client enters its packet parser on the first successful socket
-        // notification.  With an empty receive buffer it dereferences NULL and
-        // crashes.  Its wire format starts with a little-endian packet length;
-        // an empty two-byte frame safely primes that parser.
-        var bootstrap=new byte[] { 0x02, 0x00 };
+        // The 1999 client enters its parser on the first socket notification and
+        // crashes on a buffer shorter than its four-byte E1 header. E1/05 is a
+        // known no-op in the client, so a complete empty frame safely primes it.
+        var bootstrap=new byte[] { 0xE1, 0x05, 0x04, 0x00 };
         await c.GetStream().WriteAsync(bootstrap,0,bootstrap.Length,token);
-        log("접속: "+c.Client.RemoteEndPoint+" / 초기 프레임 02-00 전송");
+        log("접속: "+c.Client.RemoteEndPoint+" / 안전 초기 프레임 E1-05-04-00 전송");
         Task.Run(()=>ClientLoop(c,token));
       } catch(ObjectDisposedException){} catch(Exception ex){ if(!token.IsCancellationRequested) log("서버 오류: "+ex.Message); }
     }

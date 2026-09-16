@@ -15,8 +15,8 @@ using System.Windows.Forms;
 using System.Reflection;
 
 [assembly: AssemblyTitle("SamKook FreeNet Launcher")]
-[assembly: AssemblyVersion("1.2.1.0")]
-[assembly: AssemblyFileVersion("1.2.1.0")]
+[assembly: AssemblyVersion("1.2.2.0")]
+[assembly: AssemblyFileVersion("1.2.2.0")]
 
 namespace SamKookFreeNet {
   static class Program {
@@ -29,7 +29,7 @@ namespace SamKookFreeNet {
   }
 
   sealed class LauncherForm : Form {
-    const string LauncherVersion = "1.2.1";
+    const string LauncherVersion = "1.2.2";
     const string DefaultGame = @"C:\Users\seo\Downloads\DGGL\Games\SamKook_Win\SamKook.exe";
     readonly TextBox gamePath = new TextBox();
     readonly TextBox serverAddress = new TextBox();
@@ -132,6 +132,7 @@ namespace SamKookFreeNet {
         }
       }
       if (changed != 2) throw new InvalidDataException("지원하는 SamKook.exe가 아닙니다. 서버 주소 2개를 찾지 못했습니다.");
+      data=QueuePatch.Apply(File.ReadAllBytes(source),data);
       File.WriteAllBytes(destination, data);
     }
     async Task CheckUpdate() {
@@ -220,9 +221,8 @@ namespace SamKookFreeNet {
     async Task AcceptLoop(CancellationToken token) {
       while(!token.IsCancellationRequested) try {
         var c=await listener.AcceptTcpClientAsync(); lock(clients) clients.Add(c);
-        // The 1999 client enters its parser on the first socket notification and
-        // crashes on a buffer shorter than its four-byte E1 header. E1/05 is a
-        // known no-op in the client, so a complete empty frame safely primes it.
+        // E1/05 is ignored by the client. QueuePatch, not this greeting,
+        // addresses the independent client send-queue race.
         var bootstrap=new byte[] { 0xE1, 0x05, 0x04, 0x00 };
         await c.GetStream().WriteAsync(bootstrap,0,bootstrap.Length,token);
         log("접속: "+c.Client.RemoteEndPoint+" / 안전 초기 프레임 E1-05-04-00 전송");
@@ -234,7 +234,7 @@ namespace SamKookFreeNet {
       var pending=new List<byte>();
       try { using(c) using(var stream=c.GetStream()) while(!token.IsCancellationRequested) {
         int n=await stream.ReadAsync(buffer,0,buffer.Length,token); if(n==0) break;
-        log("수신 "+n+" bytes: "+BitConverter.ToString(buffer,0,Math.Min(n,48)));
+        log("수신 "+n+" bytes (계정 검증값 보호를 위해 원문 생략)");
         for(int i=0;i<n;i++) pending.Add(buffer[i]);
         // The client sends a one-byte protocol selector before framed packets.
         if(pending.Count>0 && pending[0]==0x31) pending.RemoveAt(0);

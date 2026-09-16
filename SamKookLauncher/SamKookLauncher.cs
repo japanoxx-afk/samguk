@@ -15,8 +15,8 @@ using System.Windows.Forms;
 using System.Reflection;
 
 [assembly: AssemblyTitle("SamKook FreeNet Launcher")]
-[assembly: AssemblyVersion("1.2.0.0")]
-[assembly: AssemblyFileVersion("1.2.0.0")]
+[assembly: AssemblyVersion("1.2.1.0")]
+[assembly: AssemblyFileVersion("1.2.1.0")]
 
 namespace SamKookFreeNet {
   static class Program {
@@ -29,7 +29,7 @@ namespace SamKookFreeNet {
   }
 
   sealed class LauncherForm : Form {
-    const string LauncherVersion = "1.2.0";
+    const string LauncherVersion = "1.2.1";
     const string DefaultGame = @"C:\Users\seo\Downloads\DGGL\Games\SamKook_Win\SamKook.exe";
     readonly TextBox gamePath = new TextBox();
     readonly TextBox serverAddress = new TextBox();
@@ -256,19 +256,27 @@ namespace SamKookFreeNet {
         if(packet.Length<25) { await SendStatus(stream,0x2A,1,token); return true; }
         string id=ReadString(packet,24);
         byte[] verifier=Slice(packet,4,16), loginToken=Slice(packet,20,4);
-        bool created=accounts.Create(id,verifier,loginToken);
-        log("계정 생성 "+(created?"성공":"거부")+": "+SafeId(id));
-        await SendStatus(stream,0x2A,created?0:1,token);
+        AccountStore.CreateResult result=accounts.Create(id,verifier,loginToken);
+        bool accepted=result!=AccountStore.CreateResult.Conflict && result!=AccountStore.CreateResult.Invalid;
+        log("계정 생성 "+(result==AccountStore.CreateResult.Created?"성공":result==AccountStore.CreateResult.ExistingSame?"재전송 성공":result==AccountStore.CreateResult.Conflict?"중복 거부":"형식 거부")+": "+SafeId(id));
+        await SendStatus(stream,0x2A,accepted?0:1,token);
         return true;
       }
       if(command==0x36) {
         // Login: fixed client data(20), login token(4), id(NUL), machine data.
         if(packet.Length<25) { await SendStatus(stream,0x36,2,token); return true; }
-        string id=ReadString(packet,24); byte[] loginToken=Slice(packet,20,4);
-        bool authenticated=accounts.Authenticate(id,loginToken);
+        string id=ReadString(packet,24); byte[] verifier=Slice(packet,4,16), loginToken=Slice(packet,20,4);
+        bool authenticated=accounts.Authenticate(id,verifier,loginToken);
         log("로그인 "+(authenticated?"성공":"실패")+": "+SafeId(id));
         // The original client maps status 1 to success and 2 to invalid/in-use.
         await SendStatus(stream,0x36,authenticated?1:2,token);
+        return true;
+      }
+      if(command==0x29) {
+        // Post-login CD-key/session validation. Zero means accepted; the client
+        // then advances to its lobby handshake instead of retrying login.
+        log("로그인 후 세션 인증 성공");
+        await SendStatus(stream,0x29,0,token);
         return true;
       }
       return false;
@@ -291,18 +299,20 @@ namespace SamKookFreeNet {
   }
 
   sealed class AccountStore {
+    public enum CreateResult { Created, ExistingSame, Conflict, Invalid }
     sealed class Account { public string Id; public string Verifier; public string Token; }
     readonly string path; readonly object sync=new object();
     public AccountStore(string filePath) { path=filePath; }
-    public bool Create(string id,byte[] verifier,byte[] token) {
-      id=Normalize(id); if(!Valid(id) || AllZero(verifier) || AllZero(token)) return false;
+    public CreateResult Create(string id,byte[] verifier,byte[] token) {
+      id=Normalize(id); if(!Valid(id) || AllZero(verifier) || AllZero(token)) return CreateResult.Invalid;
       lock(sync) {
-        var all=Load(); if(all.ContainsKey(id)) return false;
-        all[id]=new Account { Id=id, Verifier=Hex(verifier), Token=Hex(token) }; Save(all); return true;
+        var all=Load(); Account existing; string verifierHex=Hex(verifier),tokenHex=Hex(token);
+        if(all.TryGetValue(id,out existing)) return FixedEquals(existing.Verifier,verifierHex)&&FixedEquals(existing.Token,tokenHex)?CreateResult.ExistingSame:CreateResult.Conflict;
+        all[id]=new Account { Id=id, Verifier=verifierHex, Token=tokenHex }; Save(all); return CreateResult.Created;
       }
     }
-    public bool Authenticate(string id,byte[] token) {
-      id=Normalize(id); lock(sync) { var all=Load(); Account account; return all.TryGetValue(id,out account) && FixedEquals(account.Token,Hex(token)); }
+    public bool Authenticate(string id,byte[] verifier,byte[] token) {
+      id=Normalize(id); lock(sync) { var all=Load(); Account account; return all.TryGetValue(id,out account) && FixedEquals(account.Verifier,Hex(verifier)) && FixedEquals(account.Token,Hex(token)); }
     }
     Dictionary<string,Account> Load() {
       var result=new Dictionary<string,Account>(StringComparer.OrdinalIgnoreCase);

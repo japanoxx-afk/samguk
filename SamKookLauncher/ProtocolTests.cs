@@ -21,8 +21,12 @@ static class ProtocolTests {
         if(bootstrap[0]!=0xE1||bootstrap[1]!=0x05||bootstrap[2]!=4||bootstrap[3]!=0) throw new Exception("Bad bootstrap");
         var create=Build(0x2A,false); stream.Write(create,0,create.Length); var response=new byte[8]; ReadAll(stream,response);
         if(response[1]!=0x2A || response[4]!=0) throw new Exception("Create failed: "+BitConverter.ToString(response));
+        stream.Write(create,0,create.Length); ReadAll(stream,response);
+        if(response[1]!=0x2A || response[4]!=0) throw new Exception("Idempotent create failed: "+BitConverter.ToString(response));
         var login=Build(0x36,true); stream.Write(login,0,login.Length); ReadAll(stream,response);
         if(response[1]!=0x36 || response[4]!=1) throw new Exception("Login failed: "+BitConverter.ToString(response));
+        var session=BuildSession(); stream.Write(session,0,session.Length); ReadAll(stream,response);
+        if(response[1]!=0x29 || response[4]!=0) throw new Exception("Session validation failed: "+BitConverter.ToString(response));
       }
       Console.WriteLine("PASS: account creation and login protocol"); return 0;
     } finally { type.GetMethod("Stop").Invoke(server,null); if(File.Exists(accountFile)) File.Delete(accountFile); }
@@ -34,8 +38,9 @@ static class ProtocolTests {
       var id=System.Text.Encoding.ASCII.GetBytes("testuser"); Buffer.BlockCopy(id,0,p,24,id.Length); return p;
     } else {
       var p=new byte[40]; p[0]=0xE1;p[1]=command;p[2]=(byte)p.Length;
-      p[20]=1;p[21]=2;p[22]=3;p[23]=4; var id=System.Text.Encoding.ASCII.GetBytes("testuser"); Buffer.BlockCopy(id,0,p,24,id.Length); return p;
+      for(int i=4;i<20;i++)p[i]=(byte)(i+1); p[20]=1;p[21]=2;p[22]=3;p[23]=4; var id=System.Text.Encoding.ASCII.GetBytes("testuser"); Buffer.BlockCopy(id,0,p,24,id.Length); return p;
     }
   }
+  static byte[] BuildSession() { return new byte[] { 0xE1,0x29,0x08,0x00,0,0,0,0 }; }
   static void ReadAll(NetworkStream stream,byte[] data) { int o=0; while(o<data.Length){int n=stream.Read(data,o,data.Length-o);if(n==0)throw new EndOfStreamException();o+=n;} }
 }

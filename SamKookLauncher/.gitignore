@@ -2,3 +2,7 @@ runtime/
 game-path.txt
 *.log
 dist/remote-verification.zip
+accounts.db
+accounts.db.bak
+accounts.db.tmp
+ProtocolTests.exe

@@ -15,8 +15,8 @@ using System.Windows.Forms;
 using System.Reflection;
 
 [assembly: AssemblyTitle("SamKook FreeNet Launcher")]
-[assembly: AssemblyVersion("1.2.2.0")]
-[assembly: AssemblyFileVersion("1.2.2.0")]
+[assembly: AssemblyVersion("1.3.0.0")]
+[assembly: AssemblyFileVersion("1.3.0.0")]
 
 namespace SamKookFreeNet {
   static class Program {
@@ -29,7 +29,7 @@ namespace SamKookFreeNet {
   }
 
   sealed class LauncherForm : Form {
-    const string LauncherVersion = "1.2.2";
+    const string LauncherVersion = "1.3.0";
     const string DefaultGame = @"C:\Users\seo\Downloads\DGGL\Games\SamKook_Win\SamKook.exe";
     readonly TextBox gamePath = new TextBox();
     readonly TextBox serverAddress = new TextBox();
@@ -200,6 +200,7 @@ namespace SamKookFreeNet {
   }
 
   sealed class LobbyServer {
+    sealed class Session { public int Challenge; public bool Issued; public bool Authenticated; }
     readonly Action<string> log; readonly List<TcpClient> clients = new List<TcpClient>();
     readonly AccountStore accounts;
     TcpListener listener; CancellationTokenSource cancel;
@@ -232,6 +233,9 @@ namespace SamKookFreeNet {
     async Task ClientLoop(TcpClient c, CancellationToken token) {
       var buffer=new byte[8192];
       var pending=new List<byte>();
+      var session=new Session();
+      var nonce=new byte[4]; using(var rng=System.Security.Cryptography.RandomNumberGenerator.Create())rng.GetBytes(nonce);
+      session.Challenge=BitConverter.ToInt32(nonce,0);
       try { using(c) using(var stream=c.GetStream()) while(!token.IsCancellationRequested) {
         int n=await stream.ReadAsync(buffer,0,buffer.Length,token); if(n==0) break;
         log("수신 "+n+" bytes (계정 검증값 보호를 위해 원문 생략)");
@@ -244,39 +248,53 @@ namespace SamKookFreeNet {
           if(length<4 || length>8192) { log("잘못된 패킷 길이: "+length); pending.RemoveAt(0); continue; }
           if(pending.Count<length) break;
           var packet=pending.GetRange(0,length).ToArray(); pending.RemoveRange(0,length);
-          if(!await HandlePacket(c,stream,packet,token)) await Relay(c,packet,token);
+          log("요청 E1-"+packet[1].ToString("X2")+" / 길이 "+length);
+          await HandlePacket(session,stream,packet,token);
         }
       }} catch(Exception ex) { if(!token.IsCancellationRequested) log("연결 종료: "+ex.Message); }
       finally { lock(clients) clients.Remove(c); log("접속 종료"); }
     }
-    async Task<bool> HandlePacket(TcpClient client, NetworkStream stream, byte[] packet, CancellationToken token) {
+    async Task<bool> HandlePacket(Session session, NetworkStream stream, byte[] packet, CancellationToken token) {
       byte command=packet[1];
+      if(command==0x05 && !session.Issued) {
+        session.Issued=true;
+        await SendStatus(stream,0x28,session.Challenge,token);
+        log("인증 난수 발급"); return true;
+      }
       if(command==0x2A) {
         // Create account: header(4), password verifier(16), login token(4), id(NUL).
-        if(packet.Length<25) { await SendStatus(stream,0x2A,1,token); return true; }
+        if(packet.Length<25) { await SendStatus(stream,0x2A,0,token); return true; }
         string id=ReadString(packet,24);
         byte[] verifier=Slice(packet,4,16), loginToken=Slice(packet,20,4);
         AccountStore.CreateResult result=accounts.Create(id,verifier,loginToken);
         bool accepted=result!=AccountStore.CreateResult.Conflict && result!=AccountStore.CreateResult.Invalid;
         log("계정 생성 "+(result==AccountStore.CreateResult.Created?"성공":result==AccountStore.CreateResult.ExistingSame?"재전송 성공":result==AccountStore.CreateResult.Conflict?"중복 거부":"형식 거부")+": "+SafeId(id));
-        await SendStatus(stream,0x2A,accepted?0:1,token);
+        await SendStatus(stream,0x2A,accepted?1:0,token);
         return true;
       }
       if(command==0x36) {
-        // Login: fixed client data(20), login token(4), id(NUL), machine data.
-        if(packet.Length<25) { await SendStatus(stream,0x36,2,token); return true; }
-        string id=ReadString(packet,24); byte[] verifier=Slice(packet,4,16), loginToken=Slice(packet,20,4);
-        bool authenticated=accounts.Authenticate(id,verifier,loginToken);
-        log("로그인 "+(authenticated?"성공":"실패")+": "+SafeId(id));
-        // The original client maps status 1 to success and 2 to invalid/in-use.
-        await SendStatus(stream,0x36,authenticated?1:2,token);
+        // Pre-auth client metadata; not a password proof. The client's shared
+        // outgoing buffer may contain unrelated stale bytes in this request.
+        if(!session.Issued) { session.Issued=true; await SendStatus(stream,0x28,session.Challenge,token); }
+        await SendStatus(stream,0x36,1,token);
+        log("접속 사전 단계 완료 / 비밀번호 인증 대기");
         return true;
       }
       if(command==0x29) {
-        // Post-login CD-key/session validation. Zero means accepted; the client
-        // then advances to its lobby handshake instead of retrying login.
-        log("로그인 후 세션 인증 성공");
-        await SendStatus(stream,0x29,0,token);
+        // header + client nonce + server nonce + 20-byte proof + account NUL.
+        bool valid=packet.Length>=34 && session.Issued && BitConverter.ToInt32(packet,8)==session.Challenge;
+        string id=valid?ReadString(packet,32):"";
+        session.Authenticated=valid && accounts.VerifyChallenge(id,Slice(packet,4,8),Slice(packet,12,20));
+        await SendStatus(stream,0x29,session.Authenticated?1:0,token);
+        log("비밀번호 인증 "+(session.Authenticated?"성공":"실패")+": "+SafeId(id));
+        return true;
+      }
+      if(command==0x0B && session.Authenticated) {
+        var names=Encoding.ASCII.GetBytes("FreeNet\0\0"); var response=new byte[4+names.Length];
+        response[0]=0xE1;response[1]=0x0B;response[2]=(byte)response.Length;
+        Buffer.BlockCopy(names,0,response,4,names.Length);
+        await stream.WriteAsync(response,0,response.Length,token);
+        log("로비 채널 목록 전송: FreeNet");
         return true;
       }
       return false;
@@ -313,6 +331,16 @@ namespace SamKookFreeNet {
     }
     public bool Authenticate(string id,byte[] verifier,byte[] token) {
       id=Normalize(id); lock(sync) { var all=Load(); Account account; return all.TryGetValue(id,out account) && FixedEquals(account.Verifier,Hex(verifier)) && FixedEquals(account.Token,Hex(token)); }
+    }
+    public bool VerifyChallenge(string id,byte[] nonces,byte[] proof) {
+      lock(sync) {
+        Account account; if(!Load().TryGetValue(Normalize(id),out account))return false;
+        string stored=account.Verifier+account.Token;
+        if(stored.Length!=40 || nonces.Length!=8 || proof.Length!=20)return false;
+        var material=new byte[28];Buffer.BlockCopy(nonces,0,material,0,8);
+        for(int i=0;i<20;i++)material[8+i]=Convert.ToByte(stored.Substring(i*2,2),16);
+        return FixedEquals(Hex(LegacyHash.Compute(material)),Hex(proof));
+      }
     }
     Dictionary<string,Account> Load() {
       var result=new Dictionary<string,Account>(StringComparer.OrdinalIgnoreCase);

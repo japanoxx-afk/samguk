@@ -15,8 +15,8 @@ using System.Windows.Forms;
 using System.Reflection;
 
 [assembly: AssemblyTitle("SamKook FreeNet Launcher")]
-[assembly: AssemblyVersion("1.3.4.0")]
-[assembly: AssemblyFileVersion("1.3.4.0")]
+[assembly: AssemblyVersion("1.3.5.0")]
+[assembly: AssemblyFileVersion("1.3.5.0")]
 
 namespace SamKookFreeNet {
   static class Program {
@@ -29,7 +29,7 @@ namespace SamKookFreeNet {
   }
 
   sealed class LauncherForm : Form {
-    const string LauncherVersion = "1.3.4";
+    const string LauncherVersion = "1.3.5";
     const string DefaultGame = @"C:\Users\seo\Downloads\DGGL\Games\SamKook_Win\SamKook.exe";
     readonly TextBox gamePath = new TextBox();
     readonly TextBox serverAddress = new TextBox();
@@ -178,10 +178,22 @@ namespace SamKookFreeNet {
           var zip = Path.Combine(Path.GetTempPath(), "SamKookLauncher-update-" + Guid.NewGuid().ToString("N") + ".zip");
           WriteLog("v"+remoteVersion+" 다운로드 중...");
           File.WriteAllBytes(zip, await http.GetByteArrayAsync(info.Url));
-          var updater = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "LauncherUpdater.exe");
-          if (!File.Exists(updater)) throw new FileNotFoundException("LauncherUpdater.exe가 없습니다.");
-          Process.Start(new ProcessStartInfo { FileName=updater, Arguments=Quote(zip)+" "+Process.GetCurrentProcess().Id+" "+Quote(AppDomain.CurrentDomain.BaseDirectory), UseShellExecute=false });
-          Application.Exit();
+          var handoff=Path.Combine(Path.GetTempPath(),"SamKook-handoff-"+Guid.NewGuid().ToString("N"));
+          Directory.CreateDirectory(handoff);
+          var updater=Path.Combine(handoff,"LauncherUpdater.exe");
+          using(var archive=ZipFile.OpenRead(zip)) {
+            var entry=archive.GetEntry("LauncherUpdater.exe");
+            if(entry==null) throw new InvalidDataException("업데이트 도우미가 ZIP에 없습니다.");
+            entry.ExtractToFile(updater);
+          }
+          string ready=Path.Combine(handoff,"ready");
+          using(var helper=Process.Start(new ProcessStartInfo { FileName=updater, Arguments=Quote(zip)+" "+Process.GetCurrentProcess().Id+" "+Quote(AppDomain.CurrentDomain.BaseDirectory)+" "+Quote(ready), UseShellExecute=false,CreateNoWindow=true })) {
+            var timer=Stopwatch.StartNew();
+            while(!File.Exists(ready) && !helper.HasExited && timer.ElapsedMilliseconds<15000) await Task.Delay(100);
+            if(!File.Exists(ready) || helper.HasExited) throw new IOException("업데이트 준비에 실패했습니다. 런처는 종료하지 않았습니다. 게임/다른 런처를 닫고 update.log를 확인하세요.");
+            WriteLog("업데이트 검증·백업 완료. 교체 후 자동 재시작합니다.");
+            Application.Exit();
+          }
         }
       } catch (Exception ex) {
         var detail=ex.InnerException!=null ? ex.Message+"\n"+ex.InnerException.Message : ex.Message;
@@ -212,7 +224,14 @@ namespace SamKookFreeNet {
         return new UpdateInfo { Version=version.Groups[1].Value, Url=url.Groups[1].Value.Replace("\\/","/") };
       }
     }
-    static string Quote(string s) { return "\"" + s.Replace("\"", "\\\"") + "\""; }
+    static string Quote(string s) {
+      var b=new StringBuilder("\""); int slashes=0;
+      foreach(char c in s) {
+        if(c=='\\') { slashes++; continue; }
+        b.Append('\\',c=='\"'?slashes*2+1:slashes); b.Append(c); slashes=0;
+      }
+      b.Append('\\',slashes*2); b.Append('"'); return b.ToString();
+    }
     void WriteLog(string text) {
       var line="["+DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff")+"] "+text+Environment.NewLine;
       lock(logLock) { try { File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"freenet.log"),line,Encoding.UTF8); } catch { } }

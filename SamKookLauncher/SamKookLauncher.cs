@@ -15,8 +15,8 @@ using System.Windows.Forms;
 using System.Reflection;
 
 [assembly: AssemblyTitle("SamKook FreeNet Launcher")]
-[assembly: AssemblyVersion("1.3.5.0")]
-[assembly: AssemblyFileVersion("1.3.5.0")]
+[assembly: AssemblyVersion("1.3.6.0")]
+[assembly: AssemblyFileVersion("1.3.6.0")]
 
 namespace SamKookFreeNet {
   static class Program {
@@ -29,7 +29,7 @@ namespace SamKookFreeNet {
   }
 
   sealed class LauncherForm : Form {
-    const string LauncherVersion = "1.3.5";
+    const string LauncherVersion = "1.3.6";
     const string DefaultGame = @"C:\Users\seo\Downloads\DGGL\Games\SamKook_Win\SamKook.exe";
     readonly TextBox gamePath = new TextBox();
     readonly TextBox serverAddress = new TextBox();
@@ -56,7 +56,7 @@ namespace SamKookFreeNet {
       browse.Click += Browse;
 
       var serverLabel = new Label { Text = "접속 서버 IP", AutoSize = true, Location = new Point(20, 162) };
-      serverAddress.Text = LoadSetting("server-address.txt","127.0.0.1"); serverAddress.Location = new Point(125,157); serverAddress.Size = new Size(180,27);
+      serverAddress.Text = LoadSetting("server-address.txt","26.157.67.215"); serverAddress.Location = new Point(125,157); serverAddress.Size = new Size(180,27);
       var serverHint = new Label { Text = "A PC: 127.0.0.1  /  B PC: A PC의 LAN·VPN IPv4", AutoSize = true, ForeColor = Color.DimGray, Location = new Point(315,162) };
       var hosts = new Button { Text = "hosts 파일 열기", Location = new Point(545,190), Size = new Size(150,36) };
       hosts.Click += OpenHostsFile;
@@ -243,7 +243,9 @@ namespace SamKookFreeNet {
   }
 
   sealed class LobbyServer {
-    sealed class Session { public int Challenge; public bool Issued; public bool Authenticated; public string Room; public byte[] RoomPacket; }
+    sealed class Session { public int Challenge; public bool Issued; public volatile bool Authenticated; public volatile bool InLobby; public string Id; public string Room; public byte[] RoomPacket; public IPAddress Address; public NetworkStream Stream; public TcpClient Client; }
+    readonly List<Session> sessions=new List<Session>();
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<NetworkStream,SemaphoreSlim> writes=new System.Runtime.CompilerServices.ConditionalWeakTable<NetworkStream,SemaphoreSlim>();
     readonly Dictionary<string,Session> rooms=new Dictionary<string,Session>(StringComparer.OrdinalIgnoreCase);
     readonly Action<string> log; readonly List<TcpClient> clients = new List<TcpClient>();
     readonly AccountStore accounts;
@@ -280,7 +282,8 @@ namespace SamKookFreeNet {
     async Task ClientLoop(TcpClient c, CancellationToken token) {
       var buffer=new byte[8192];
       var pending=new List<byte>();
-      var session=new Session();
+      var session=new Session { Client=c,Stream=c.GetStream(),Address=((IPEndPoint)c.Client.RemoteEndPoint).Address };
+      lock(sessions) sessions.Add(session);
       var nonce=new byte[4]; using(var rng=System.Security.Cryptography.RandomNumberGenerator.Create())rng.GetBytes(nonce);
       session.Challenge=BitConverter.ToInt32(nonce,0);
       try { using(c) using(var stream=c.GetStream()) while(!token.IsCancellationRequested) {
@@ -300,10 +303,25 @@ namespace SamKookFreeNet {
             log("미지원 요청 E1-"+packet[1].ToString("X2")+" (응답 없음)");
         }
       }} catch(Exception ex) { if(!token.IsCancellationRequested) log("연결 종료: "+ex.Message); }
-      finally { ReleaseRoom(session); lock(clients) clients.Remove(c); log("접속 종료"); }
+      finally { session.InLobby=false; lock(sessions) sessions.Remove(session); ReleaseRoom(session); lock(clients) clients.Remove(c); log("접속 종료"); }
     }
     async Task<bool> HandlePacket(Session session, NetworkStream stream, byte[] packet, CancellationToken token) {
       byte command=packet[1];
+      if(command==0x09) {
+        await Send(stream,RoomList(session,packet),token);
+        log("방 목록 응답 전송 (E1-09)"); return true;
+      }
+      if(command==0x0E) {
+        if(!session.Authenticated || !session.InLobby || packet.Length<6 || packet.Length>165 || packet[packet.Length-1]!=0) return true;
+        string message=ReadString(packet,4);
+        if(message.Length==0 || message.IndexOfAny(new[]{'\r','\n','\t'})>=0) return true;
+        var talk=ChatEvent(5,session.Id,message);
+        List<Session> peers; lock(sessions) peers=sessions.FindAll(x=>x.Authenticated && x.InLobby);
+        await Task.WhenAll(peers.ConvertAll(peer=>SendChat(peer,talk,token)));
+        log("로비 채팅 전달: "+peers.Count+"명 (내용은 기록하지 않음)"); return true;
+      }
+      if(command==0x02) { ReleaseRoom(session); return true; }
+      if(command==0x10) { session.InLobby=false; return true; }
       if(command==0x08) {
         // Original creator 429900: 24-byte fixed header followed by room name,
         // password, and host/map description, all NUL terminated. Response
@@ -323,7 +341,7 @@ namespace SamKookFreeNet {
             && (operation==0 || session.Room==name)) {
             if(session.Room!=null && session.Room!=name) rooms.Remove(session.Room);
             session.Room=name; session.RoomPacket=(byte[])packet.Clone(); rooms[name]=session;
-            accepted=true;
+            accepted=true; session.InLobby=false;
           }
         }
         await SendStatus(stream,0x08,accepted?1:0,token);
@@ -358,7 +376,9 @@ namespace SamKookFreeNet {
         // header + client nonce + server nonce + 20-byte proof + account NUL.
         bool valid=packet.Length>=34 && session.Issued && BitConverter.ToInt32(packet,8)==session.Challenge;
         string id=valid?ReadString(packet,32):"";
-        session.Authenticated=valid && accounts.VerifyChallenge(id,Slice(packet,4,8),Slice(packet,12,20));
+        bool authenticated=valid && accounts.VerifyChallenge(id,Slice(packet,4,8),Slice(packet,12,20));
+        session.Id=authenticated?id:null; session.Authenticated=authenticated;
+        if(!authenticated) { session.InLobby=false; ReleaseRoom(session); }
         await SendStatus(stream,0x29,session.Authenticated?1:0,token);
         log("비밀번호 인증 "+(session.Authenticated?"성공":"실패")+": "+SafeId(id));
         return true;
@@ -367,12 +387,13 @@ namespace SamKookFreeNet {
         var names=Encoding.ASCII.GetBytes("FreeNet\0\0"); var response=new byte[4+names.Length];
         response[0]=0xE1;response[1]=0x0B;response[2]=(byte)response.Length;
         Buffer.BlockCopy(names,0,response,4,names.Length);
-        await stream.WriteAsync(response,0,response.Length,token);
+        await Send(stream,response,token);
         log("로비 채널 목록 전송: FreeNet");
         return true;
       }
       if(command==0x0C && session.Authenticated) {
         ReleaseRoom(session);
+        session.InLobby=true;
         // Original handler 43C524: event 7 clears the user list and reads
         // TWO NUL-terminated strings at offset 28, displaying the second.
         // Do not echo incoming flags or unchecked strings into this parser.
@@ -381,7 +402,7 @@ namespace SamKookFreeNet {
         response[0]=0xE1; response[1]=0x0F; response[2]=(byte)response.Length;
         response[4]=7;
         Buffer.BlockCopy(names,0,response,28,names.Length);
-        await stream.WriteAsync(response,0,response.Length,token);
+        await Send(stream,response,token);
         log("채널 입장 알림 전송: FreeNet (E1-0F / 이벤트 7)");
         return true;
       }
@@ -394,13 +415,61 @@ namespace SamKookFreeNet {
         session.Room=null; session.RoomPacket=null;
       }
     }
+    static byte[] ChatEvent(int kind,string name,string message) {
+      var text=Encoding.GetEncoding(949).GetBytes(name+"\0"+message+"\0");
+      var response=new byte[28+text.Length]; response[0]=0xE1;response[1]=0x0F;
+      response[2]=(byte)response.Length;response[3]=(byte)(response.Length>>8);response[4]=(byte)kind;
+      Buffer.BlockCopy(text,0,response,28,text.Length); return response;
+    }
+    async Task SendChat(Session peer,byte[] packet,CancellationToken token) {
+      using(var timeout=CancellationTokenSource.CreateLinkedTokenSource(token)) {
+        timeout.CancelAfter(3000);
+        try { await Send(peer.Stream,packet,timeout.Token); } catch { peer.Client.Close(); }
+      }
+    }
+    byte[] RoomList(Session requester,byte[] query) {
+      var entries=new List<byte[]>(); int max=20;
+      if(query.Length>=20) max=Math.Max(0,Math.Min(20,BitConverter.ToInt32(query,16)));
+      var encoding=Encoding.GetEncoding(949);
+      lock(rooms) if(requester.Authenticated) foreach(var pair in rooms) {
+        if(entries.Count>=max) break;
+        var host=pair.Value; var source=host.RoomPacket; if(source==null || !host.Authenticated || string.IsNullOrEmpty(host.Id))continue;
+        int end=Array.IndexOf(source,(byte)0,24), passEnd=Array.IndexOf(source,(byte)0,end+1);
+        // Never disclose room passwords; protected-room join is not implemented.
+        if(passEnd!=end+1)continue;
+        string info=ReadString(source,passEnd+1); int space=info.IndexOf(' ');
+        if(space<0)continue;
+        string map=info.Substring(space+1);
+        if(encoding.GetByteCount(host.Id)>20 || encoding.GetByteCount(map)>31)continue;
+        var ip=host.Address;
+        if(IPAddress.IsLoopback(ip) && !IPAddress.IsLoopback(requester.Address))
+          ip=((IPEndPoint)requester.Client.Client.LocalEndPoint).Address;
+        var strings=encoding.GetBytes(pair.Key+"\0\0"+host.Id+" "+map+"\0");
+        var row=new byte[32+strings.Length];
+        // Client 43BF44: game type at 0, sockaddr family at 8, address at 12,
+        // open-room state at 24; name/password/host+map strings begin at 32.
+        Buffer.BlockCopy(source,12,row,0,2); row[8]=2; row[24]=4;
+        Buffer.BlockCopy(ip.GetAddressBytes(),0,row,12,4);
+        Buffer.BlockCopy(strings,0,row,32,strings.Length); entries.Add(row);
+      }
+      using(var memory=new MemoryStream()) using(var writer=new BinaryWriter(memory)) {
+        writer.Write((byte)0xE1);writer.Write((byte)0x09);writer.Write((ushort)0);writer.Write(entries.Count);
+        foreach(var entry in entries)writer.Write(entry);
+        var response=memory.ToArray();response[2]=(byte)response.Length;response[3]=(byte)(response.Length>>8);return response;
+      }
+    }
+    static async Task Send(NetworkStream stream,byte[] response,CancellationToken token) {
+      var gate=writes.GetValue(stream,s=>new SemaphoreSlim(1,1));
+      await gate.WaitAsync(token);
+      try { await stream.WriteAsync(response,0,response.Length,token); } finally { gate.Release(); }
+    }
     async Task Relay(TcpClient source, byte[] packet, CancellationToken token) {
       List<TcpClient> peers; lock(clients) peers=new List<TcpClient>(clients);
       foreach(var peer in peers) if(peer!=source && peer.Connected) try { await peer.GetStream().WriteAsync(packet,0,packet.Length,token); } catch { }
     }
     static async Task SendStatus(NetworkStream stream, byte command, int status, CancellationToken token) {
       var response=new byte[] { 0xE1,command,0x08,0x00,(byte)status,(byte)(status>>8),(byte)(status>>16),(byte)(status>>24) };
-      await stream.WriteAsync(response,0,response.Length,token);
+      await Send(stream,response,token);
     }
     static byte[] Slice(byte[] source,int offset,int count) { var value=new byte[count]; Buffer.BlockCopy(source,offset,value,0,count); return value; }
     static string ReadString(byte[] packet,int offset) {

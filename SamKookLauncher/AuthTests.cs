@@ -38,8 +38,41 @@ static class AuthTests {
    Send(s,8,room);var created=Read(s);Check(created.Length==8 && created[1]==8 && created[4]==1,"Room create failed");
    Send(s,8,room);Check(Read(s)[4]==1,"Room retry failed");
    room[0]=12;Send(s,8,room);Check(Read(s)[4]==1,"Room refresh failed");
-  }Console.WriteLine("PASS: auth, channels, room create/retry/refresh and invalid request rejection");return 0;}
+   using(var b=new TcpClient("127.0.0.1",port))using(var bs=b.GetStream()) {
+    bs.ReadTimeout=4000;Read(bs);
+    var query=new byte[17];query[12]=20;
+    Send(bs,9,query);Check(BitConverter.ToInt32(Read(bs),4)==0,"Unauthenticated room listing");
+    Login(bs,"guestuser");
+    Send(s,0x10,new byte[0]);
+    Send(bs,9,query);var listed=Read(bs);
+    Check(BitConverter.ToInt32(listed,4)==1 && Encoding.ASCII.GetString(listed,40,10)=="Test room\0","Room not visible to B");
+    Check(listed[20]==127 && listed[23]==1 && listed[32]==4,"Room IP/status layout");
+    File.WriteAllBytes(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"room-response.bin"),listed);
+    Send(s,2,new byte[0]);Send(s,9,query);Check(BitConverter.ToInt32(Read(s),4)==0,"Stop advertising did not remove room");
+    Send(s,0x0C,Encoding.ASCII.GetBytes("\0\0\0\0FreeNet\0"));Read(s);
+    Send(bs,0x0C,Encoding.ASCII.GetBytes("\0\0\0\0FreeNet\0"));Read(bs);
+    var chat=Frame(0x0E,Encoding.GetEncoding(949).GetBytes("안녕하세요\0"));s.Write(chat,0,2);s.Write(chat,2,chat.Length-2);
+    var own=Read(s);var other=Read(bs);
+    Check(BitConverter.ToInt32(other,4)==5 && Encoding.GetEncoding(949).GetString(other,28,other.Length-28)=="testuser\0안녕하세요\0","Chat not delivered to B");
+    Check(Convert.ToBase64String(own)==Convert.ToBase64String(other),"Chat self echo differs");
+    File.WriteAllBytes(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"chat-response.bin"),other);
+    Send(bs,0x0E,Encoding.GetEncoding(949).GetBytes("답장\0"));Read(bs);var reply=Read(s);
+    Check(Encoding.GetEncoding(949).GetString(reply,28,reply.Length-28)=="guestuser\0답장\0","B-to-A chat failed");
+    room[0]=0;Send(bs,8,room);Check(Read(bs)[4]==1,"B room create failed");
+   }
+   bool removed=false;
+   for(int i=0;i<30;i++) { var q=new byte[17];q[12]=20;Send(s,9,q);if(BitConverter.ToInt32(Read(s),4)==0){removed=true;break;}System.Threading.Thread.Sleep(20); }
+   Check(removed,"Disconnected host room retained");
+  }Console.WriteLine("PASS: auth, two-client room discovery/removal, bidirectional Korean chat");return 0;}
   finally{type.GetMethod("Stop").Invoke(server,null);}
+ }
+ static void Login(NetworkStream s,string user) {
+  s.WriteByte(0x31);Send(s,5,new byte[20]);var challenge=Read(s);
+  var pw=Hash(Encoding.ASCII.GetBytes("example"));var id=Encoding.ASCII.GetBytes(user+"\0");
+  var create=new byte[20+id.Length];pw.CopyTo(create,0);id.CopyTo(create,20);Send(s,0x2A,create);Check(Read(s)[4]==1,"Guest create");
+  var material=new byte[28];Buffer.BlockCopy(challenge,4,material,4,4);pw.CopyTo(material,8);
+  var login=new byte[28+id.Length];Buffer.BlockCopy(material,0,login,0,8);Hash(material).CopyTo(login,8);id.CopyTo(login,28);
+  Send(s,0x29,login);Check(Read(s)[4]==1,"Guest login");
  }
  static byte[] Frame(byte cmd,byte[] body){var p=new byte[4+body.Length];p[0]=0xE1;p[1]=cmd;p[2]=(byte)p.Length;p[3]=(byte)(p.Length>>8);Buffer.BlockCopy(body,0,p,4,body.Length);return p;}
  static void Send(NetworkStream s,byte cmd,byte[] body){var p=Frame(cmd,body);s.Write(p,0,p.Length);}

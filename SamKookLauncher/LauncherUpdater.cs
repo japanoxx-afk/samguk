@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.Windows.Forms;
 
 static class LauncherUpdater {
- static readonly string[] Files={"SamKookLauncher.exe","LauncherUpdater.exe","GameMonitor.exe","README.md"};
+ static readonly string[] Files={"SamKookLauncher.exe","LauncherUpdater.exe","GameMonitor.exe","cnc-ddraw.dll","cnc-ddraw-LICENSE.txt","README.md"};
  [STAThread] static int Main(string[] args) {
   string target=null,work=null; Process parent=null; bool exited=false;
   var replaced=new List<string>(); var backups=new Dictionary<string,string>();
@@ -30,7 +30,7 @@ static class LauncherUpdater {
    foreach(string name in Files) {
     string dest=Path.Combine(target,name);
     if(!File.Exists(dest)) continue;
-    if(name=="GameMonitor.exe" || name=="LauncherUpdater.exe") using(var f=new FileStream(dest,FileMode.Open,FileAccess.ReadWrite,FileShare.None)) { }
+    if(name=="GameMonitor.exe" || name=="LauncherUpdater.exe" || name.EndsWith(".dll")) using(var f=new FileStream(dest,FileMode.Open,FileAccess.ReadWrite,FileShare.None)) { }
     string backup=Path.Combine(work,name+".bak"); File.Copy(dest,backup); backups[name]=backup;
    }
    File.WriteAllText(ready,"READY");

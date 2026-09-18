@@ -7,3 +7,8 @@ accounts.db.bak
 accounts.db.tmp
 ProtocolTests.exe
 server-address.txt
+display-mode.txt
+wide-screen.txt
+reduce-spin.txt
+crash-diagnostic.txt
+RuntimeTests.exe

@@ -15,8 +15,8 @@ using System.Windows.Forms;
 using System.Reflection;
 
 [assembly: AssemblyTitle("SamKook FreeNet Launcher")]
-[assembly: AssemblyVersion("1.3.6.0")]
-[assembly: AssemblyFileVersion("1.3.6.0")]
+[assembly: AssemblyVersion("1.4.0.0")]
+[assembly: AssemblyFileVersion("1.4.0.0")]
 
 namespace SamKookFreeNet {
   static class Program {
@@ -29,7 +29,7 @@ namespace SamKookFreeNet {
   }
 
   sealed class LauncherForm : Form {
-    const string LauncherVersion = "1.3.6";
+    const string LauncherVersion = "1.4.0";
     const string DefaultGame = @"C:\Users\seo\Downloads\DGGL\Games\SamKook_Win\SamKook.exe";
     readonly TextBox gamePath = new TextBox();
     readonly TextBox serverAddress = new TextBox();
@@ -37,13 +37,17 @@ namespace SamKookFreeNet {
     readonly Button play = new Button();
     readonly Button serverButton = new Button();
     readonly Button update = new Button();
+    readonly ComboBox displayMode=new ComboBox { DropDownStyle=ComboBoxStyle.DropDownList };
+    readonly CheckBox wideScreen=new CheckBox { Text="16:9 늘려 표시 (시야 확장 아님)",AutoSize=true };
+    readonly CheckBox reduceSpin=new CheckBox { Text="송신 스레드 CPU 점유 완화",AutoSize=true };
+    readonly CheckBox crashDiagnostic=new CheckBox { Text="충돌 진단 모드",AutoSize=true };
     readonly LobbyServer server;
     readonly object logLock = new object();
 
     public LauncherForm() {
       Text = "삼국통일 FreeNet 런처";
-      ClientSize = new Size(720, 500);
-      MinimumSize = new Size(650, 460);
+      ClientSize = new Size(720, 610);
+      MinimumSize = new Size(740, 650);
       Font = new Font("맑은 고딕", 10F);
       StartPosition = FormStartPosition.CenterScreen;
 
@@ -71,7 +75,19 @@ namespace SamKookFreeNet {
       var test=new Button { Text="서버 연결 테스트",Location=new Point(20,242),Size=new Size(180,30) };
       test.Click += async (s,e)=> { test.Enabled=false; try { await CheckConnection(); } catch(Exception ex) { WriteLog(ex.Message); MessageBox.Show(this,ex.Message,"서버 연결"); } finally { test.Enabled=true; } };
       Controls.Add(test);
-      log.Location = new Point(20, 282); log.Size = new Size(675, 192); log.Multiline = true; log.ReadOnly = true;
+      displayMode.Items.AddRange(new object[]{"원본 전체화면","창모드 (최대 1280×720)","테두리 없는 전체화면"});
+      int mode; if(!int.TryParse(LoadSetting("display-mode.txt","0"),out mode) || mode<0 || mode>2)mode=0;
+      displayMode.SelectedIndex=mode;displayMode.Location=new Point(20,282);displayMode.Width=270;
+      wideScreen.Checked=LoadSetting("wide-screen.txt","true")=="true";wideScreen.Location=new Point(305,285);
+      wideScreen.Enabled=mode!=0;displayMode.SelectedIndexChanged+=(s,e)=>wideScreen.Enabled=displayMode.SelectedIndex!=0;
+      reduceSpin.Checked=LoadSetting("reduce-spin.txt","true")=="true";reduceSpin.Location=new Point(20,320);
+      crashDiagnostic.Checked=LoadSetting("crash-diagnostic.txt","false")=="true";crashDiagnostic.Location=new Point(305,320);
+      var latency=new Button { Text="네트워크 지연 측정",Location=new Point(215,242),Size=new Size(180,30) };
+      latency.Click+=async (s,e)=>{ latency.Enabled=false;try{await MeasureLatency();}catch(Exception ex){WriteLog("지연 측정 실패: "+ex.Message);}finally{latency.Enabled=true;} };
+      Controls.AddRange(new Control[]{displayMode,wideScreen,reduceSpin,crashDiagnostic,latency});
+      var displayHint=new Label { Text="화면 설정은 재실행 시 적용 / 16:9는 원본 화면 확대 / 네트워크 동기화 속도는 변경하지 않음",AutoSize=true,Location=new Point(20,353),ForeColor=Color.DimGray,Font=new Font("맑은 고딕",8F) };
+      Controls.Add(displayHint);
+      log.Location = new Point(20, 385); log.Size = new Size(675, 200); log.Multiline = true; log.ReadOnly = true;
       log.ScrollBars = ScrollBars.Vertical; log.BackColor = Color.FromArgb(25,25,28); log.ForeColor = Color.Gainsboro;
       log.Font = new Font("Consolas", 9F);
       Controls.AddRange(new Control[] { title, version, hint, pathLabel, gamePath, browse, serverLabel, serverAddress, serverHint, hosts, serverButton, play, update, log });
@@ -120,6 +136,17 @@ namespace SamKookFreeNet {
       }
       WriteLog("TCP 연결 성공. hosts 등록은 필요하지 않습니다. 게임에는 숫자 IP를 직접 적용합니다.");
     }
+    async Task MeasureLatency() {
+      IPAddress ip;if(!IPAddress.TryParse(serverAddress.Text.Trim(),out ip))throw new ArgumentException("서버 IP를 확인하세요.");
+      long min=long.MaxValue,max=0,total=0;int ok=0;
+      using(var ping=new System.Net.NetworkInformation.Ping())for(int i=0;i<5;i++) {
+        var reply=await ping.SendPingAsync(ip,1500);
+        if(reply.Status==System.Net.NetworkInformation.IPStatus.Success){ok++;total+=reply.RoundtripTime;min=Math.Min(min,reply.RoundtripTime);max=Math.Max(max,reply.RoundtripTime);}
+        await Task.Delay(150);
+      }
+      WriteLog("ICMP "+ip+": 응답 "+ok+"/5"+(ok>0?" / 최소·평균·최대 "+min+" / "+(total/ok)+" / "+max+" ms":" (ICMP 차단일 수도 있음)"));
+      WriteLog("측정은 서버 IP까지의 왕복 시간입니다. 실제 대전의 DirectPlay 지연과 동일하지 않습니다. A 자신을 측정하면 비교에 도움이 되지 않습니다.");
+    }
     async void StartGame(object sender, EventArgs e) {
       play.Enabled=false;
       try {
@@ -131,21 +158,34 @@ namespace SamKookFreeNet {
         targetText=targetAddress.ToString();
         SavePath();
         SaveSetting("server-address.txt",targetText);
+        SaveSetting("display-mode.txt",displayMode.SelectedIndex.ToString());SaveSetting("wide-screen.txt",wideScreen.Checked?"true":"false");
+        SaveSetting("reduce-spin.txt",reduceSpin.Checked?"true":"false");SaveSetting("crash-diagnostic.txt",crashDiagnostic.Checked?"true":"false");
         if (IPAddress.IsLoopback(targetAddress) && !server.IsRunning) { server.Start(); serverButton.Text = "로컬 서버 중지"; }
         await CheckConnection();
-        var runtime = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "runtime");
+        var runtime = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "runtime",displayMode.SelectedIndex==0?"original":"display");
         Directory.CreateDirectory(runtime);
         var patched = Path.Combine(runtime, "SamKook.FreeNet.exe");
-        PatchServerAddresses(source, patched, targetText);
+        var data=QueuePatch.ApplyAddress(File.ReadAllBytes(source),targetText);
+        if(reduceSpin.Checked)QueuePatch.ReduceSenderSpin(data);
+        File.WriteAllBytes(patched,data);
+        var area=Screen.FromControl(this).WorkingArea;
+        double ratio=wideScreen.Checked?16.0/9.0:4.0/3.0;
+        int h=Math.Min(720,Math.Max(240,area.Height-100));int w=(int)(h*ratio);
+        if(w>area.Width-40){w=area.Width-40;h=(int)(w/ratio);}
+        GameOptions.Prepare(AppDomain.CurrentDomain.BaseDirectory,runtime,displayMode.SelectedIndex,wideScreen.Checked,w,h);
+        WriteLog("화면: "+displayMode.Text+" / "+(displayMode.SelectedIndex==0?"게임 원본 비율":wideScreen.Checked?"16:9 늘림":"4:3 유지")+" / CPU 점유 완화 "+reduceSpin.Checked);
         var monitor=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"GameMonitor.exe");
         if(!File.Exists(monitor)) throw new FileNotFoundException("충돌 진단 도우미가 없습니다. GameMonitor.exe를 런처와 같은 폴더에 두세요.");
         var crashFolder=Path.Combine(runtime,"crashes");
-        var game = Process.Start(new ProcessStartInfo { FileName = monitor, Arguments=Quote(patched)+" "+Quote(Path.GetDirectoryName(source))+" "+Quote(crashFolder), WorkingDirectory = Path.GetDirectoryName(source), UseShellExecute = false, CreateNoWindow=true });
+        var launch=crashDiagnostic.Checked?
+          new ProcessStartInfo { FileName=monitor,Arguments=Quote(patched)+" "+Quote(Path.GetDirectoryName(source))+" "+Quote(crashFolder),WorkingDirectory=Path.GetDirectoryName(source),UseShellExecute=false,CreateNoWindow=true }:
+          new ProcessStartInfo { FileName=patched,WorkingDirectory=Path.GetDirectoryName(source),UseShellExecute=false };
+        var game = Process.Start(launch);
         if(game!=null) {
           int pid=game.Id;
-          WriteLog("게임 충돌 진단 도우미 시작 PID="+pid+" / 실제 게임 PID·예외 주소: runtime\\crashes\\crash-monitor.log");
+          WriteLog((crashDiagnostic.Checked?"충돌 진단 도우미":"게임")+" 시작 PID="+pid);
           Task.Run(()=> {
-            try { game.WaitForExit(); WriteLog("게임 진단 실행 종료 / 종료 코드 0x"+unchecked((uint)game.ExitCode).ToString("X8")+" / 충돌 자료: "+crashFolder); }
+            try { game.WaitForExit(); WriteLog("게임 실행 종료 / 종료 코드 0x"+unchecked((uint)game.ExitCode).ToString("X8")+" / 진단 모드 사용 시 자료: "+crashFolder); }
             catch(Exception ex) { WriteLog("게임 종료 상태 확인 실패: "+ex.Message); }
             finally { game.Dispose(); }
           });

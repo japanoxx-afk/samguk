@@ -8,6 +8,26 @@ namespace SamKookFreeNet {
   // Exact-build patch: serialize enqueue and drain, including allocation and
   // freeing. The original enqueue publishes a node before initializing it.
   static class QueuePatch {
+    public static void ReduceSenderSpin(byte[] data) {
+      int pe=BitConverter.ToInt32(data,0x3c), opt=pe+24;
+      int table=opt+BitConverter.ToUInt16(data,pe+20);
+      int header=table+(BitConverter.ToUInt16(data,pe+6)-1)*40;
+      int raw=BitConverter.ToInt32(data,header+20), va=BitConverter.ToInt32(data,opt+28)+BitConverter.ToInt32(data,header+12);
+      byte[] expected={0xa1,0xac,0x82,0x47,0x00};
+      for(int i=0;i<5;i++)if(data[0x4a1a0+i]!=expected[i])throw new InvalidDataException("송신 루프 검증 실패");
+      Buffer.BlockCopy(Encoding.ASCII.GetBytes("Sleep\0kernel32.dll\0"),0,data,raw+340,19);
+      var b=new List<byte>(); b.AddRange(new byte[]{0x9c,0x60,0xa1}); I32(b,va+336);
+      b.AddRange(new byte[]{0x85,0xc0,0x75,0}); int cached=b.Count-1;
+      b.Add(0x68);I32(b,va+346);b.AddRange(new byte[]{0xff,0x15});I32(b,0x45f124);
+      b.Add(0x68);I32(b,va+340);b.Add(0x50);b.AddRange(new byte[]{0xff,0x15});I32(b,0x45f098);
+      b.Add(0xa3);I32(b,va+336);b.AddRange(new byte[]{0x85,0xc0,0x74,0});int missing=b.Count-1;
+      int invoke=b.Count; b.AddRange(new byte[]{0x6a,0x01,0xff,0xd0});int finish=b.Count;
+      b[cached]=(byte)(invoke-cached-1);b[missing]=(byte)(finish-missing-1);
+      b.AddRange(new byte[]{0x61,0x9d});b.AddRange(expected);b.Add(0xe9);I32(b,0x44a1a5-(va+368+b.Count+4));
+      if(368+b.Count>512)throw new InvalidDataException("패치 공간 부족");
+      Buffer.BlockCopy(b.ToArray(),0,data,raw+368,b.Count);
+      data[0x4a1a0]=0xe9;Put(data,0x4a1a1,va+368-0x44a1a5);
+    }
     public static byte[] ApplyAddress(byte[] original,string address) {
       System.Net.IPAddress ip;
       if(!System.Net.IPAddress.TryParse(address,out ip) || ip.AddressFamily!=System.Net.Sockets.AddressFamily.InterNetwork)

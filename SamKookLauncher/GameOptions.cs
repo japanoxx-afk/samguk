@@ -9,7 +9,7 @@ namespace SamKookFreeNet {
    if(mode<1 || mode>2 || width<320 || height<240)throw new ArgumentException("화면 설정 오류");
    return "[ddraw]\r\nwidth="+width+"\r\nheight="+height+"\r\nwindowed=true\r\nfullscreen="+(mode==2?"true":"false")+
     "\r\nmaintas=true\r\naspect_ratio="+(wide?"16:9":"4:3")+
-    "\r\nboxing=false\r\nrenderer=auto\r\nshader=\r\nd3d9_filter=1\r\nvsync=false\r\nmaxfps=60\r\nmaxgameticks=-1\r\nsinglecpu=false\r\nadjmouse=true\r\nborder=true\r\nresizable=false\r\nsavesettings=0\r\nminfps=5\r\n";
+    "\r\nboxing=false\r\nrenderer=gdi\r\nshader=\r\nd3d9_filter=1\r\nvsync=false\r\nmaxfps=60\r\nmaxgameticks=-1\r\nsinglecpu=false\r\nadjmouse=true\r\nborder=true\r\nresizable=false\r\nsavesettings=0\r\nminfps=-2\r\ntoggle_borderless=true\r\nnonexclusive=true\r\nfixchilds=2\r\n";
   }
   public static void Prepare(string root,string runtime,int mode,bool wide,int width,int height) {
    if(mode==0)return;

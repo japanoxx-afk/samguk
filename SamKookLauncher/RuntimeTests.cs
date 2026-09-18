@@ -18,6 +18,8 @@ static class RuntimeTests {
    var config=(string)options.GetMethod("Config").Invoke(null,new object[]{mode,wide,1280,720});
    Check(config.Contains("aspect_ratio="+(wide?"16:9":"4:3")),"Aspect mismatch");
    Check(config.Contains("fullscreen="+(mode==2?"true":"false")),"Mode mismatch");
+   Check(config.Contains("windowed=true\r\n") && config.Contains("toggle_borderless=true\r\n"),"Unsafe fullscreen toggle");
+   Check(config.Contains("renderer=gdi\r\n") && config.Contains("minfps=-2\r\n") && config.Contains("fixchilds=2\r\n") && config.Contains("nonexclusive=true\r\n"),"Dialog rendering compatibility missing");
    Check(config.Contains("singlecpu=false") && config.Contains("maxgameticks=-1") && config.Contains("vsync=false"),"Latency settings wrong");
   }
   string runtime=Path.Combine(root,"display-test");Directory.CreateDirectory(runtime);

@@ -15,8 +15,8 @@ using System.Windows.Forms;
 using System.Reflection;
 
 [assembly: AssemblyTitle("SamKook FreeNet Launcher")]
-[assembly: AssemblyVersion("1.3.3.0")]
-[assembly: AssemblyFileVersion("1.3.3.0")]
+[assembly: AssemblyVersion("1.3.4.0")]
+[assembly: AssemblyFileVersion("1.3.4.0")]
 
 namespace SamKookFreeNet {
   static class Program {
@@ -29,7 +29,7 @@ namespace SamKookFreeNet {
   }
 
   sealed class LauncherForm : Form {
-    const string LauncherVersion = "1.3.3";
+    const string LauncherVersion = "1.3.4";
     const string DefaultGame = @"C:\Users\seo\Downloads\DGGL\Games\SamKook_Win\SamKook.exe";
     readonly TextBox gamePath = new TextBox();
     readonly TextBox serverAddress = new TextBox();
@@ -68,7 +68,10 @@ namespace SamKookFreeNet {
       play.Click += StartGame;
       update.Click += async (s,e) => await CheckUpdate();
 
-      log.Location = new Point(20, 252); log.Size = new Size(675, 222); log.Multiline = true; log.ReadOnly = true;
+      var test=new Button { Text="서버 연결 테스트",Location=new Point(20,242),Size=new Size(180,30) };
+      test.Click += async (s,e)=> { test.Enabled=false; try { await CheckConnection(); } catch(Exception ex) { WriteLog(ex.Message); MessageBox.Show(this,ex.Message,"서버 연결"); } finally { test.Enabled=true; } };
+      Controls.Add(test);
+      log.Location = new Point(20, 282); log.Size = new Size(675, 192); log.Multiline = true; log.ReadOnly = true;
       log.ScrollBars = ScrollBars.Vertical; log.BackColor = Color.FromArgb(25,25,28); log.ForeColor = Color.Gainsboro;
       log.Font = new Font("Consolas", 9F);
       Controls.AddRange(new Control[] { title, version, hint, pathLabel, gamePath, browse, serverLabel, serverAddress, serverHint, hosts, serverButton, play, update, log });
@@ -101,17 +104,35 @@ namespace SamKookFreeNet {
         WriteLog("hosts 파일을 메모장으로 열었습니다: "+hosts);
       } catch(Exception ex) { MessageBox.Show(this,ex.Message,"hosts 파일"); }
     }
-    void StartGame(object sender, EventArgs e) {
+    async Task CheckConnection() {
+      IPAddress address;
+      if(!IPAddress.TryParse(serverAddress.Text.Trim(),out address) || address.AddressFamily!=AddressFamily.InterNetwork)
+        throw new ArgumentException("접속 서버 IP에 A PC의 IPv4 주소를 입력하세요.");
+      WriteLog("TCP 연결 확인: "+address+":7104");
+      using(var client=new TcpClient()) {
+        var connect=client.ConnectAsync(address,7104);
+        if(await Task.WhenAny(connect,Task.Delay(4000))!=connect) {
+          client.Close();
+          connect.ContinueWith(t=>{ var ignored=t.Exception; },TaskContinuationOptions.OnlyOnFaulted);
+          throw new IOException("연결 시간 초과: A PC 서버 실행, A PC 방화벽 TCP 7104, 두 PC의 LAN/VPN 연결을 확인하세요. B PC에는 A PC의 IP를 입력해야 합니다.");
+        }
+        try { await connect; } catch(SocketException ex) { throw new IOException("서버 연결 실패 ("+ex.SocketErrorCode+"): A PC에서 로컬 서버를 시작하고 TCP 7104 방화벽 설정과 IP를 확인하세요.",ex); }
+      }
+      WriteLog("TCP 연결 성공. hosts 등록은 필요하지 않습니다. 게임에는 숫자 IP를 직접 적용합니다.");
+    }
+    async void StartGame(object sender, EventArgs e) {
+      play.Enabled=false;
       try {
         var source = Path.GetFullPath(gamePath.Text.Trim());
         if (!File.Exists(source)) throw new FileNotFoundException("SamKook.exe를 찾을 수 없습니다.", source);
         IPAddress targetAddress;
         var targetText=serverAddress.Text.Trim();
         if(!IPAddress.TryParse(targetText,out targetAddress) || targetAddress.AddressFamily!=AddressFamily.InterNetwork) throw new ArgumentException("접속 서버 IP에 올바른 IPv4 주소를 입력하세요.");
-        if(targetText.Length>13) throw new ArgumentException("이 게임의 주소 저장 공간 제한으로 서버 IP는 13자 이하여야 합니다. LAN·Radmin·Hamachi IPv4를 사용하세요.");
+        targetText=targetAddress.ToString();
         SavePath();
         SaveSetting("server-address.txt",targetText);
         if (IPAddress.IsLoopback(targetAddress) && !server.IsRunning) { server.Start(); serverButton.Text = "로컬 서버 중지"; }
+        await CheckConnection();
         var runtime = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "runtime");
         Directory.CreateDirectory(runtime);
         var patched = Path.Combine(runtime, "SamKook.FreeNet.exe");
@@ -130,21 +151,11 @@ namespace SamKookFreeNet {
           });
         }
         WriteLog("게임 실행: 인터넷 플레이 접속을 "+targetText+":7104로 연결합니다.");
-      } catch (Exception ex) { MessageBox.Show(this, ex.ToString(), "실행 오류"); }
+      } catch (Exception ex) { WriteLog("게임 실행 중단: "+ex.Message); MessageBox.Show(this, ex.Message, "실행 오류"); }
+      finally { play.Enabled=true; }
     }
     static void PatchServerAddresses(string source, string destination, string targetAddress) {
-      var data = File.ReadAllBytes(source);
-      int changed = 0;
-      foreach (var oldAddress in new[] { "210.109.148.16", "211.44.13.187" }) {
-        var oldBytes = Encoding.ASCII.GetBytes(oldAddress); var replacement = new byte[oldBytes.Length];
-        var target = Encoding.ASCII.GetBytes(targetAddress); Buffer.BlockCopy(target, 0, replacement, 0, target.Length);
-        for (int i=0; i<=data.Length-oldBytes.Length; i++) {
-          bool match=true; for(int j=0;j<oldBytes.Length;j++) if(data[i+j]!=oldBytes[j]) { match=false; break; }
-          if(match) { Buffer.BlockCopy(replacement,0,data,i,replacement.Length); changed++; i += oldBytes.Length-1; }
-        }
-      }
-      if (changed != 2) throw new InvalidDataException("지원하는 SamKook.exe가 아닙니다. 서버 주소 2개를 찾지 못했습니다.");
-      data=QueuePatch.Apply(File.ReadAllBytes(source),data);
+      var data=QueuePatch.ApplyAddress(File.ReadAllBytes(source),targetAddress);
       File.WriteAllBytes(destination, data);
     }
     async Task CheckUpdate() {
@@ -229,6 +240,7 @@ namespace SamKookFreeNet {
       if (IsRunning) return;
       cancel=new CancellationTokenSource(); listener=new TcpListener(IPAddress.Any,port); listener.Start();
       log("FreeNet 로비 서버 시작: 0.0.0.0:"+ListeningPort); Task.Run(()=>AcceptLoop(cancel.Token));
+      try { foreach(var address in Dns.GetHostAddresses(Dns.GetHostName())) if(address.AddressFamily==AddressFamily.InterNetwork && !IPAddress.IsLoopback(address)) log("B PC에 입력할 A PC IP 후보: "+address+" (B와 연결된 LAN/VPN 주소 선택)"); } catch { }
     }
     public void Stop() {
       if (!IsRunning) return; cancel.Cancel(); listener.Stop(); listener=null;

@@ -8,6 +8,25 @@ namespace SamKookFreeNet {
   // Exact-build patch: serialize enqueue and drain, including allocation and
   // freeing. The original enqueue publishes a node before initializing it.
   static class QueuePatch {
+    public static byte[] ApplyAddress(byte[] original,string address) {
+      System.Net.IPAddress ip;
+      if(!System.Net.IPAddress.TryParse(address,out ip) || ip.AddressFamily!=System.Net.Sockets.AddressFamily.InterNetwork)
+        throw new ArgumentException("IPv4 주소가 필요합니다.");
+      var result=Apply(original,original);
+      int pe=BitConverter.ToInt32(result,0x3c), opt=pe+24;
+      int table=opt+BitConverter.ToUInt16(result,pe+20);
+      int header=table+(BitConverter.ToUInt16(result,pe+6)-1)*40;
+      int raw=BitConverter.ToInt32(result,header+20), rva=BitConverter.ToInt32(result,header+12);
+      var bytes=Encoding.ASCII.GetBytes(ip.ToString()+"\0");
+      Buffer.BlockCopy(bytes,0,result,raw+320,bytes.Length);
+      // Verified PUSH operands, not a global replacement of arbitrary bytes.
+      if(result[0x281ff]!=0x68 || BitConverter.ToInt32(result,0x28200)!=0x4642f0
+        || result[0x28225]!=0x68 || BitConverter.ToInt32(result,0x28226)!=0x4642e0)
+        throw new InvalidDataException("접속 주소 명령어 검증 실패");
+      int target=BitConverter.ToInt32(result,opt+28)+rva+320;
+      Put(result,0x28200,target); Put(result,0x28226,target);
+      return result;
+    }
     public static byte[] Apply(byte[] original, byte[] addressed) {
       using(var sha=SHA256.Create()) {
         if(BitConverter.ToString(sha.ComputeHash(original)).Replace("-","") !=

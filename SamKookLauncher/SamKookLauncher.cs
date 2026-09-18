@@ -15,8 +15,8 @@ using System.Windows.Forms;
 using System.Reflection;
 
 [assembly: AssemblyTitle("SamKook FreeNet Launcher")]
-[assembly: AssemblyVersion("1.5.0.0")]
-[assembly: AssemblyFileVersion("1.5.0.0")]
+[assembly: AssemblyVersion("1.6.0.0")]
+[assembly: AssemblyFileVersion("1.6.0.0")]
 
 namespace SamKookFreeNet {
   static class Program {
@@ -29,7 +29,7 @@ namespace SamKookFreeNet {
   }
 
   sealed class LauncherForm : Form {
-    const string LauncherVersion = "1.5.0";
+    const string LauncherVersion = "1.6.0";
     const string DefaultGame = @"C:\Users\seo\Downloads\DGGL\Games\SamKook_Win\SamKook.exe";
     readonly TextBox gamePath = new TextBox();
     readonly TextBox serverAddress = new TextBox();
@@ -86,7 +86,9 @@ namespace SamKookFreeNet {
       lowLatency.Checked=LoadSetting("low-latency.txt","true")=="true";lowLatency.Location=new Point(20,350);
       var latency=new Button { Text="네트워크 지연 측정",Location=new Point(215,242),Size=new Size(180,30) };
       latency.Click+=async (s,e)=>{ latency.Enabled=false;try{await MeasureLatency();}catch(Exception ex){WriteLog("지연 측정 실패: "+ex.Message);}finally{latency.Enabled=true;} };
-      Controls.AddRange(new Control[]{displayMode,wideScreen,reduceSpin,lowLatency,crashDiagnostic,latency});
+      var preview=new Button { Text="맵 미니맵 프리뷰",Location=new Point(410,242),Size=new Size(180,30) };
+      preview.Click+=(s,e)=>{try{MapPreview.Show(this,gamePath.Text.Trim());}catch(Exception ex){WriteLog("맵 프리뷰 실패: "+ex.Message);MessageBox.Show(this,ex.Message,"맵 프리뷰");}};
+      Controls.AddRange(new Control[]{displayMode,wideScreen,reduceSpin,lowLatency,crashDiagnostic,latency,preview});
       var displayHint=new Label { Text="멀티 저지연은 A·B PC 모두 동일하게 설정 / 문제 시 둘 다 해제",AutoSize=true,Location=new Point(20,380),ForeColor=Color.DimGray,Font=new Font("맑은 고딕",8F) };
       Controls.Add(displayHint);
       log.Location = new Point(20, 410); log.Size = new Size(675, 205); log.Multiline = true; log.ReadOnly = true;

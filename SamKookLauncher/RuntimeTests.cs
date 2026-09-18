@@ -29,6 +29,13 @@ static class RuntimeTests {
   string runtime=Path.Combine(root,"display-test");Directory.CreateDirectory(runtime);
   options.GetMethod("Prepare").Invoke(null,new object[]{root,runtime,1,true,1280,720});
   Check(File.Exists(Path.Combine(runtime,"ddraw.dll")) && File.Exists(Path.Combine(runtime,"ddraw.ini")),"Graphics module missing");
-  Console.WriteLine("PASS display modes, graphics hash, original preservation, sender yield and multiplayer low-latency patch");return 0;
+  var preview=asm.GetType("SamKookFreeNet.MapPreview");int maps=0;
+  string mission=Path.Combine(Path.GetDirectoryName(args[0]),"Mission");
+  foreach(string file in Directory.GetFiles(mission,"*.skm")) {
+   object[] call={file,0,0};var bitmap=(IDisposable)preview.GetMethod("Render").Invoke(null,call);
+   Check((int)call[1]>=16 && (int)call[2]>=16,"Invalid map dimensions");bitmap.Dispose();maps++;
+  }
+  Check(maps>0,"No map previews tested");
+  Console.WriteLine("PASS "+maps+" map previews, display modes, original preservation and multiplayer patches");return 0;
  }
 }

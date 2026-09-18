@@ -15,8 +15,8 @@ using System.Windows.Forms;
 using System.Reflection;
 
 [assembly: AssemblyTitle("SamKook FreeNet Launcher")]
-[assembly: AssemblyVersion("1.3.0.0")]
-[assembly: AssemblyFileVersion("1.3.0.0")]
+[assembly: AssemblyVersion("1.3.3.0")]
+[assembly: AssemblyFileVersion("1.3.3.0")]
 
 namespace SamKookFreeNet {
   static class Program {
@@ -29,7 +29,7 @@ namespace SamKookFreeNet {
   }
 
   sealed class LauncherForm : Form {
-    const string LauncherVersion = "1.3.0";
+    const string LauncherVersion = "1.3.3";
     const string DefaultGame = @"C:\Users\seo\Downloads\DGGL\Games\SamKook_Win\SamKook.exe";
     readonly TextBox gamePath = new TextBox();
     readonly TextBox serverAddress = new TextBox();
@@ -116,7 +116,19 @@ namespace SamKookFreeNet {
         Directory.CreateDirectory(runtime);
         var patched = Path.Combine(runtime, "SamKook.FreeNet.exe");
         PatchServerAddresses(source, patched, targetText);
-        Process.Start(new ProcessStartInfo { FileName = patched, WorkingDirectory = Path.GetDirectoryName(source), UseShellExecute = true });
+        var monitor=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"GameMonitor.exe");
+        if(!File.Exists(monitor)) throw new FileNotFoundException("충돌 진단 도우미가 없습니다. GameMonitor.exe를 런처와 같은 폴더에 두세요.");
+        var crashFolder=Path.Combine(runtime,"crashes");
+        var game = Process.Start(new ProcessStartInfo { FileName = monitor, Arguments=Quote(patched)+" "+Quote(Path.GetDirectoryName(source))+" "+Quote(crashFolder), WorkingDirectory = Path.GetDirectoryName(source), UseShellExecute = false, CreateNoWindow=true });
+        if(game!=null) {
+          int pid=game.Id;
+          WriteLog("게임 충돌 진단 도우미 시작 PID="+pid+" / 실제 게임 PID·예외 주소: runtime\\crashes\\crash-monitor.log");
+          Task.Run(()=> {
+            try { game.WaitForExit(); WriteLog("게임 진단 실행 종료 / 종료 코드 0x"+unchecked((uint)game.ExitCode).ToString("X8")+" / 충돌 자료: "+crashFolder); }
+            catch(Exception ex) { WriteLog("게임 종료 상태 확인 실패: "+ex.Message); }
+            finally { game.Dispose(); }
+          });
+        }
         WriteLog("게임 실행: 인터넷 플레이 접속을 "+targetText+":7104로 연결합니다.");
       } catch (Exception ex) { MessageBox.Show(this, ex.ToString(), "실행 오류"); }
     }
@@ -193,26 +205,30 @@ namespace SamKookFreeNet {
     void WriteLog(string text) {
       var line="["+DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff")+"] "+text+Environment.NewLine;
       lock(logLock) { try { File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"freenet.log"),line,Encoding.UTF8); } catch { } }
-      if (InvokeRequired) { BeginInvoke(new Action<string>(AppendLog), line); return; }
+      if(IsDisposed || Disposing || !IsHandleCreated) return;
+      if (InvokeRequired) { try { BeginInvoke(new Action<string>(AppendLog), line); } catch(InvalidOperationException) { } return; }
       AppendLog(line);
     }
-    void AppendLog(string line) { log.AppendText(line); }
+    void AppendLog(string line) { if(!IsDisposed && !Disposing) log.AppendText(line); }
   }
 
   sealed class LobbyServer {
-    sealed class Session { public int Challenge; public bool Issued; public bool Authenticated; }
+    sealed class Session { public int Challenge; public bool Issued; public bool Authenticated; public string Room; public byte[] RoomPacket; }
+    readonly Dictionary<string,Session> rooms=new Dictionary<string,Session>(StringComparer.OrdinalIgnoreCase);
     readonly Action<string> log; readonly List<TcpClient> clients = new List<TcpClient>();
     readonly AccountStore accounts;
+    readonly int port;
     TcpListener listener; CancellationTokenSource cancel;
+    public int ListeningPort { get { return ((IPEndPoint)listener.LocalEndpoint).Port; } }
     public bool IsRunning { get { return listener != null; } }
-    public LobbyServer(Action<string> logger) {
-      log=logger;
+    public LobbyServer(Action<string> logger, int listenPort=7104) {
+      log=logger; port=listenPort;
       accounts=new AccountStore(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"accounts.db"));
     }
     public void Start() {
       if (IsRunning) return;
-      cancel=new CancellationTokenSource(); listener=new TcpListener(IPAddress.Any,7104); listener.Start();
-      log("FreeNet 로비 서버 시작: 0.0.0.0:7104"); Task.Run(()=>AcceptLoop(cancel.Token));
+      cancel=new CancellationTokenSource(); listener=new TcpListener(IPAddress.Any,port); listener.Start();
+      log("FreeNet 로비 서버 시작: 0.0.0.0:"+ListeningPort); Task.Run(()=>AcceptLoop(cancel.Token));
     }
     public void Stop() {
       if (!IsRunning) return; cancel.Cancel(); listener.Stop(); listener=null;
@@ -249,13 +265,40 @@ namespace SamKookFreeNet {
           if(pending.Count<length) break;
           var packet=pending.GetRange(0,length).ToArray(); pending.RemoveRange(0,length);
           log("요청 E1-"+packet[1].ToString("X2")+" / 길이 "+length);
-          await HandlePacket(session,stream,packet,token);
+          if(!await HandlePacket(session,stream,packet,token))
+            log("미지원 요청 E1-"+packet[1].ToString("X2")+" (응답 없음)");
         }
       }} catch(Exception ex) { if(!token.IsCancellationRequested) log("연결 종료: "+ex.Message); }
-      finally { lock(clients) clients.Remove(c); log("접속 종료"); }
+      finally { ReleaseRoom(session); lock(clients) clients.Remove(c); log("접속 종료"); }
     }
     async Task<bool> HandlePacket(Session session, NetworkStream stream, byte[] packet, CancellationToken token) {
       byte command=packet[1];
+      if(command==0x08) {
+        // Original creator 429900: 24-byte fixed header followed by room name,
+        // password, and host/map description, all NUL terminated. Response
+        // status 1 at offset 4 makes 43C0F7 enter host state 4 and close dialog.
+        int end=packet.Length>=27?Array.IndexOf(packet,(byte)0,24):-1;
+        int passwordEnd=end>=24?Array.IndexOf(packet,(byte)0,end+1):-1;
+        int infoEnd=passwordEnd>=0?Array.IndexOf(packet,(byte)0,passwordEnd+1):-1;
+        bool valid=session.Authenticated && packet.Length<=512 && end>24 && end-24<=31
+          && passwordEnd>=0 && passwordEnd-end<=9 && infoEnd==packet.Length-1;
+        string name=valid?ReadString(packet,24):"";
+        int operation=valid?BitConverter.ToInt32(packet,4):-1;
+        bool accepted=false;
+        lock(rooms) {
+          Session owner;
+          if(valid && name.Length>0 && (operation==0 || operation==12)
+            && (!rooms.TryGetValue(name,out owner) || owner==session)
+            && (operation==0 || session.Room==name)) {
+            if(session.Room!=null && session.Room!=name) rooms.Remove(session.Room);
+            session.Room=name; session.RoomPacket=(byte[])packet.Clone(); rooms[name]=session;
+            accepted=true;
+          }
+        }
+        await SendStatus(stream,0x08,accepted?1:0,token);
+        log(accepted?"방 생성/갱신 승인 (E1-08 / 상태 1). 방 대기 화면 전환 요청 완료.":"방 생성 거부: 인증·패킷 형식·중복 방 이름을 확인하세요.");
+        return true;
+      }
       if(command==0x05 && !session.Issued) {
         session.Issued=true;
         await SendStatus(stream,0x28,session.Challenge,token);
@@ -297,7 +340,28 @@ namespace SamKookFreeNet {
         log("로비 채널 목록 전송: FreeNet");
         return true;
       }
+      if(command==0x0C && session.Authenticated) {
+        ReleaseRoom(session);
+        // Original handler 43C524: event 7 clears the user list and reads
+        // TWO NUL-terminated strings at offset 28, displaying the second.
+        // Do not echo incoming flags or unchecked strings into this parser.
+        var names=Encoding.ASCII.GetBytes("\0FreeNet\0");
+        var response=new byte[28+names.Length];
+        response[0]=0xE1; response[1]=0x0F; response[2]=(byte)response.Length;
+        response[4]=7;
+        Buffer.BlockCopy(names,0,response,28,names.Length);
+        await stream.WriteAsync(response,0,response.Length,token);
+        log("채널 입장 알림 전송: FreeNet (E1-0F / 이벤트 7)");
+        return true;
+      }
       return false;
+    }
+    void ReleaseRoom(Session session) {
+      lock(rooms) {
+        Session owner;
+        if(session.Room!=null && rooms.TryGetValue(session.Room,out owner) && owner==session) rooms.Remove(session.Room);
+        session.Room=null; session.RoomPacket=null;
+      }
     }
     async Task Relay(TcpClient source, byte[] packet, CancellationToken token) {
       List<TcpClient> peers; lock(clients) peers=new List<TcpClient>(clients);

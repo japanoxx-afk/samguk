@@ -10,8 +10,12 @@ static class RuntimeTests {
   var original=File.ReadAllBytes(args[0]);
   var data=(byte[])patch.GetMethod("ApplyAddress").Invoke(null,new object[]{original,"26.157.67.215"});
   patch.GetMethod("ReduceSenderSpin").Invoke(null,new object[]{data});
+  patch.GetMethod("ReduceMultiplayerLatency").Invoke(null,new object[]{data});
   Check(data[0x4a1a0]==0xe9,"Spin loop not hooked");
   Check(original[0x4a1a0]==0xa1,"Source modified");
+  Check(BitConverter.ToInt32(data,0x42f6c)==3 && BitConverter.ToInt32(data,0x4300c)==3,"Multiplayer cadence not reduced");
+  Check(data[0x65802]==0 && data[0x65804]==1 && data[0x65806]==2,"Multiplayer buffers not reduced");
+  Check(BitConverter.ToInt32(original,0x42f6c)==6 && original[0x65806]==6,"Original multiplayer logic modified");
   File.WriteAllBytes(Path.Combine(root,"performance-test.exe"),data);
   var options=asm.GetType("SamKookFreeNet.GameOptions");
   foreach(int mode in new[]{1,2})foreach(bool wide in new[]{true,false}) {
@@ -25,6 +29,6 @@ static class RuntimeTests {
   string runtime=Path.Combine(root,"display-test");Directory.CreateDirectory(runtime);
   options.GetMethod("Prepare").Invoke(null,new object[]{root,runtime,1,true,1280,720});
   Check(File.Exists(Path.Combine(runtime,"ddraw.dll")) && File.Exists(Path.Combine(runtime,"ddraw.ini")),"Graphics module missing");
-  Console.WriteLine("PASS display modes, aspect options, graphics hash, source preservation and CPU patch generation");return 0;
+  Console.WriteLine("PASS display modes, graphics hash, original preservation, sender yield and multiplayer low-latency patch");return 0;
  }
 }

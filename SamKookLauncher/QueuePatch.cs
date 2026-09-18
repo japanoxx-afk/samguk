@@ -21,12 +21,29 @@ namespace SamKookFreeNet {
       b.Add(0x68);I32(b,va+346);b.AddRange(new byte[]{0xff,0x15});I32(b,0x45f124);
       b.Add(0x68);I32(b,va+340);b.Add(0x50);b.AddRange(new byte[]{0xff,0x15});I32(b,0x45f098);
       b.Add(0xa3);I32(b,va+336);b.AddRange(new byte[]{0x85,0xc0,0x74,0});int missing=b.Count-1;
-      int invoke=b.Count; b.AddRange(new byte[]{0x6a,0x01,0xff,0xd0});int finish=b.Count;
+      // Sleep(0) yields the current time slice without imposing a timer-sized
+      // delay on every pass through the multiplayer sender loop.
+      int invoke=b.Count; b.AddRange(new byte[]{0x6a,0x00,0xff,0xd0});int finish=b.Count;
       b[cached]=(byte)(invoke-cached-1);b[missing]=(byte)(finish-missing-1);
       b.AddRange(new byte[]{0x61,0x9d});b.AddRange(expected);b.Add(0xe9);I32(b,0x44a1a5-(va+368+b.Count+4));
       if(368+b.Count>512)throw new InvalidDataException("패치 공간 부족");
       Buffer.BlockCopy(b.ToArray(),0,data,raw+368,b.Count);
       data[0x4a1a0]=0xe9;Put(data,0x4a1a1,va+368-0x44a1a5);
+    }
+    public static void ReduceMultiplayerLatency(byte[] data) {
+      // Exact-build safeguards. These are the four command-buffer thresholds
+      // and two "once per six simulation frames" divisors in SamKook.exe.
+      byte[] table={0,0,2,0,4,0,6,0};
+      for(int i=0;i<table.Length;i++)if(data[0x65800+i]!=table[i])
+        throw new InvalidDataException("멀티 저지연 패치가 지원하지 않는 게임 버전입니다.");
+      if(data[0x42f6b]!=0xb9 || BitConverter.ToInt32(data,0x42f6c)!=6 ||
+         data[0x4300b]!=0xb9 || BitConverter.ToInt32(data,0x4300c)!=6)
+        throw new InvalidDataException("멀티 동기화 주기 검증 실패");
+      // Preserve a small jitter buffer for slower peers while reducing the
+      // original 0/2/4/6-frame buffering and six-frame polling cadence.
+      byte[] reduced={0,0,0,0,1,0,2,0};
+      Buffer.BlockCopy(reduced,0,data,0x65800,reduced.Length);
+      Put(data,0x42f6c,3);Put(data,0x4300c,3);
     }
     public static byte[] ApplyAddress(byte[] original,string address) {
       System.Net.IPAddress ip;

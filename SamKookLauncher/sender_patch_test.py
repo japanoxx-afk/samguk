@@ -19,7 +19,7 @@ for available in (True,False):
         elif a==0x1092000:
             assert args[1]==0x77000000 and bytes(uc.mem_read(args[2],6))==b'Sleep\0'
             value=0x1093000 if available else 0;pop=12
-        else:assert args[1]==1;value=0;pop=8
+        else:assert args[1]==0;value=0;pop=8
         uc.reg_write(UC_X86_REG_EAX,value);uc.reg_write(UC_X86_REG_ESP,sp+pop);uc.reg_write(UC_X86_REG_EIP,args[0])
     u.hook_add(UC_HOOK_CODE,hook)
     for iteration in range(2):

@@ -15,8 +15,8 @@ using System.Windows.Forms;
 using System.Reflection;
 
 [assembly: AssemblyTitle("SamKook FreeNet Launcher")]
-[assembly: AssemblyVersion("1.4.1.0")]
-[assembly: AssemblyFileVersion("1.4.1.0")]
+[assembly: AssemblyVersion("1.5.0.0")]
+[assembly: AssemblyFileVersion("1.5.0.0")]
 
 namespace SamKookFreeNet {
   static class Program {
@@ -29,7 +29,7 @@ namespace SamKookFreeNet {
   }
 
   sealed class LauncherForm : Form {
-    const string LauncherVersion = "1.4.1";
+    const string LauncherVersion = "1.5.0";
     const string DefaultGame = @"C:\Users\seo\Downloads\DGGL\Games\SamKook_Win\SamKook.exe";
     readonly TextBox gamePath = new TextBox();
     readonly TextBox serverAddress = new TextBox();
@@ -40,14 +40,15 @@ namespace SamKookFreeNet {
     readonly ComboBox displayMode=new ComboBox { DropDownStyle=ComboBoxStyle.DropDownList };
     readonly CheckBox wideScreen=new CheckBox { Text="16:9 늘려 표시 (시야 확장 아님)",AutoSize=true };
     readonly CheckBox reduceSpin=new CheckBox { Text="송신 스레드 CPU 점유 완화",AutoSize=true };
+    readonly CheckBox lowLatency=new CheckBox { Text="멀티 저지연 (모든 PC에 필요)",AutoSize=true };
     readonly CheckBox crashDiagnostic=new CheckBox { Text="충돌 진단 모드",AutoSize=true };
     readonly LobbyServer server;
     readonly object logLock = new object();
 
     public LauncherForm() {
       Text = "삼국통일 FreeNet 런처";
-      ClientSize = new Size(720, 610);
-      MinimumSize = new Size(740, 650);
+      ClientSize = new Size(720, 640);
+      MinimumSize = new Size(740, 680);
       Font = new Font("맑은 고딕", 10F);
       StartPosition = FormStartPosition.CenterScreen;
 
@@ -82,12 +83,13 @@ namespace SamKookFreeNet {
       wideScreen.Enabled=mode!=0;displayMode.SelectedIndexChanged+=(s,e)=>wideScreen.Enabled=displayMode.SelectedIndex!=0;
       reduceSpin.Checked=LoadSetting("reduce-spin.txt","true")=="true";reduceSpin.Location=new Point(20,320);
       crashDiagnostic.Checked=LoadSetting("crash-diagnostic.txt","false")=="true";crashDiagnostic.Location=new Point(305,320);
+      lowLatency.Checked=LoadSetting("low-latency.txt","true")=="true";lowLatency.Location=new Point(20,350);
       var latency=new Button { Text="네트워크 지연 측정",Location=new Point(215,242),Size=new Size(180,30) };
       latency.Click+=async (s,e)=>{ latency.Enabled=false;try{await MeasureLatency();}catch(Exception ex){WriteLog("지연 측정 실패: "+ex.Message);}finally{latency.Enabled=true;} };
-      Controls.AddRange(new Control[]{displayMode,wideScreen,reduceSpin,crashDiagnostic,latency});
-      var displayHint=new Label { Text="화면 설정은 재실행 시 적용 / 16:9는 원본 화면 확대 / 네트워크 동기화 속도는 변경하지 않음",AutoSize=true,Location=new Point(20,353),ForeColor=Color.DimGray,Font=new Font("맑은 고딕",8F) };
+      Controls.AddRange(new Control[]{displayMode,wideScreen,reduceSpin,lowLatency,crashDiagnostic,latency});
+      var displayHint=new Label { Text="멀티 저지연은 A·B PC 모두 동일하게 설정 / 문제 시 둘 다 해제",AutoSize=true,Location=new Point(20,380),ForeColor=Color.DimGray,Font=new Font("맑은 고딕",8F) };
       Controls.Add(displayHint);
-      log.Location = new Point(20, 385); log.Size = new Size(675, 200); log.Multiline = true; log.ReadOnly = true;
+      log.Location = new Point(20, 410); log.Size = new Size(675, 205); log.Multiline = true; log.ReadOnly = true;
       log.ScrollBars = ScrollBars.Vertical; log.BackColor = Color.FromArgb(25,25,28); log.ForeColor = Color.Gainsboro;
       log.Font = new Font("Consolas", 9F);
       Controls.AddRange(new Control[] { title, version, hint, pathLabel, gamePath, browse, serverLabel, serverAddress, serverHint, hosts, serverButton, play, update, log });
@@ -160,6 +162,7 @@ namespace SamKookFreeNet {
         SaveSetting("server-address.txt",targetText);
         SaveSetting("display-mode.txt",displayMode.SelectedIndex.ToString());SaveSetting("wide-screen.txt",wideScreen.Checked?"true":"false");
         SaveSetting("reduce-spin.txt",reduceSpin.Checked?"true":"false");SaveSetting("crash-diagnostic.txt",crashDiagnostic.Checked?"true":"false");
+        SaveSetting("low-latency.txt",lowLatency.Checked?"true":"false");
         if (IPAddress.IsLoopback(targetAddress) && !server.IsRunning) { server.Start(); serverButton.Text = "로컬 서버 중지"; }
         await CheckConnection();
         var runtime = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "runtime",displayMode.SelectedIndex==0?"original":"display");
@@ -167,13 +170,14 @@ namespace SamKookFreeNet {
         var patched = Path.Combine(runtime, "SamKook.FreeNet.exe");
         var data=QueuePatch.ApplyAddress(File.ReadAllBytes(source),targetText);
         if(reduceSpin.Checked)QueuePatch.ReduceSenderSpin(data);
+        if(lowLatency.Checked)QueuePatch.ReduceMultiplayerLatency(data);
         File.WriteAllBytes(patched,data);
         var area=Screen.FromControl(this).WorkingArea;
         double ratio=wideScreen.Checked?16.0/9.0:4.0/3.0;
         int h=Math.Min(720,Math.Max(240,area.Height-100));int w=(int)(h*ratio);
         if(w>area.Width-40){w=area.Width-40;h=(int)(w/ratio);}
         GameOptions.Prepare(AppDomain.CurrentDomain.BaseDirectory,runtime,displayMode.SelectedIndex,wideScreen.Checked,w,h);
-        WriteLog("화면: "+displayMode.Text+" / "+(displayMode.SelectedIndex==0?"게임 원본 비율":wideScreen.Checked?"16:9 늘림":"4:3 유지")+" / CPU 점유 완화 "+reduceSpin.Checked);
+        WriteLog("화면: "+displayMode.Text+" / "+(displayMode.SelectedIndex==0?"게임 원본 비율":wideScreen.Checked?"16:9 늘림":"4:3 유지")+" / CPU 점유 완화 "+reduceSpin.Checked+" / 멀티 저지연 "+lowLatency.Checked);
         var monitor=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"GameMonitor.exe");
         if(!File.Exists(monitor)) throw new FileNotFoundException("충돌 진단 도우미가 없습니다. GameMonitor.exe를 런처와 같은 폴더에 두세요.");
         var crashFolder=Path.Combine(runtime,"crashes");

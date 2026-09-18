@@ -15,8 +15,8 @@ using System.Windows.Forms;
 using System.Reflection;
 
 [assembly: AssemblyTitle("SamKook FreeNet Launcher")]
-[assembly: AssemblyVersion("1.6.0.0")]
-[assembly: AssemblyFileVersion("1.6.0.0")]
+[assembly: AssemblyVersion("1.7.0.0")]
+[assembly: AssemblyFileVersion("1.7.0.0")]
 
 namespace SamKookFreeNet {
   static class Program {
@@ -29,7 +29,7 @@ namespace SamKookFreeNet {
   }
 
   sealed class LauncherForm : Form {
-    const string LauncherVersion = "1.6.0";
+    const string LauncherVersion = "1.7.0";
     const string DefaultGame = @"C:\Users\seo\Downloads\DGGL\Games\SamKook_Win\SamKook.exe";
     readonly TextBox gamePath = new TextBox();
     readonly TextBox serverAddress = new TextBox();
@@ -41,6 +41,7 @@ namespace SamKookFreeNet {
     readonly CheckBox wideScreen=new CheckBox { Text="16:9 늘려 표시 (시야 확장 아님)",AutoSize=true };
     readonly CheckBox reduceSpin=new CheckBox { Text="송신 스레드 CPU 점유 완화",AutoSize=true };
     readonly CheckBox lowLatency=new CheckBox { Text="멀티 저지연 (모든 PC에 필요)",AutoSize=true };
+    readonly CheckBox extendedSelection=new CheckBox { Text="유닛 선택 36명 (실험 / 전원 동일 설정)",AutoSize=true };
     readonly CheckBox crashDiagnostic=new CheckBox { Text="충돌 진단 모드",AutoSize=true };
     readonly LobbyServer server;
     readonly object logLock = new object();
@@ -84,12 +85,13 @@ namespace SamKookFreeNet {
       reduceSpin.Checked=LoadSetting("reduce-spin.txt","true")=="true";reduceSpin.Location=new Point(20,320);
       crashDiagnostic.Checked=LoadSetting("crash-diagnostic.txt","false")=="true";crashDiagnostic.Location=new Point(305,320);
       lowLatency.Checked=LoadSetting("low-latency.txt","true")=="true";lowLatency.Location=new Point(20,350);
+      extendedSelection.Checked=LoadSetting("selection-36.txt","false")=="true";extendedSelection.Location=new Point(305,350);
       var latency=new Button { Text="네트워크 지연 측정",Location=new Point(215,242),Size=new Size(180,30) };
       latency.Click+=async (s,e)=>{ latency.Enabled=false;try{await MeasureLatency();}catch(Exception ex){WriteLog("지연 측정 실패: "+ex.Message);}finally{latency.Enabled=true;} };
       var preview=new Button { Text="맵 미니맵 프리뷰",Location=new Point(410,242),Size=new Size(180,30) };
       preview.Click+=(s,e)=>{try{MapPreview.Show(this,gamePath.Text.Trim());}catch(Exception ex){WriteLog("맵 프리뷰 실패: "+ex.Message);MessageBox.Show(this,ex.Message,"맵 프리뷰");}};
-      Controls.AddRange(new Control[]{displayMode,wideScreen,reduceSpin,lowLatency,crashDiagnostic,latency,preview});
-      var displayHint=new Label { Text="멀티 저지연은 A·B PC 모두 동일하게 설정 / 문제 시 둘 다 해제",AutoSize=true,Location=new Point(20,380),ForeColor=Color.DimGray,Font=new Font("맑은 고딕",8F) };
+      Controls.AddRange(new Control[]{displayMode,wideScreen,reduceSpin,lowLatency,extendedSelection,crashDiagnostic,latency,preview});
+      var displayHint=new Label { Text="저지연·36명 선택은 모든 PC 동일 설정 / 36명: 초상화 12칸 유지, 저장 후 부대는 12명까지 복원",AutoSize=true,Location=new Point(20,380),ForeColor=Color.DimGray,Font=new Font("맑은 고딕",8F) };
       Controls.Add(displayHint);
       log.Location = new Point(20, 410); log.Size = new Size(675, 205); log.Multiline = true; log.ReadOnly = true;
       log.ScrollBars = ScrollBars.Vertical; log.BackColor = Color.FromArgb(25,25,28); log.ForeColor = Color.Gainsboro;
@@ -165,6 +167,8 @@ namespace SamKookFreeNet {
         SaveSetting("display-mode.txt",displayMode.SelectedIndex.ToString());SaveSetting("wide-screen.txt",wideScreen.Checked?"true":"false");
         SaveSetting("reduce-spin.txt",reduceSpin.Checked?"true":"false");SaveSetting("crash-diagnostic.txt",crashDiagnostic.Checked?"true":"false");
         SaveSetting("low-latency.txt",lowLatency.Checked?"true":"false");
+        if(extendedSelection.Checked && MessageBox.Show(this,"36명 선택은 실험 기능입니다. 실제 A·B PC 대전 검증은 아직 완료되지 않았습니다.\n\n모든 참가자가 v1.7.0 이상에서 '유닛 선택 36명'을 켜야 합니다.\n12명 설정 또는 구버전과 함께 플레이하면 동기화가 어긋날 수 있습니다.\n\n초상화는 처음 12명만 표시됩니다. 기존 저장 형식을 유지하므로 저장 후 불러올 때 부대 지정은 처음 12명까지만 복원됩니다.\n원본 SamKook.exe는 수정하지 않으며 체크 해제 후 재실행하면 12명으로 돌아갑니다.\n\n같은 설정을 확인했으며 36명 모드로 실행할까요?","36명 선택 확장",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
+        SaveSetting("selection-36.txt",extendedSelection.Checked?"true":"false");
         if (IPAddress.IsLoopback(targetAddress) && !server.IsRunning) { server.Start(); serverButton.Text = "로컬 서버 중지"; }
         await CheckConnection();
         var runtime = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "runtime",displayMode.SelectedIndex==0?"original":"display");
@@ -173,6 +177,7 @@ namespace SamKookFreeNet {
         var data=QueuePatch.ApplyAddress(File.ReadAllBytes(source),targetText);
         if(reduceSpin.Checked)QueuePatch.ReduceSenderSpin(data);
         if(lowLatency.Checked)QueuePatch.ReduceMultiplayerLatency(data);
+        if(extendedSelection.Checked)data=SelectionPatch.Apply(data);
         File.WriteAllBytes(patched,data);
         var area=Screen.FromControl(this).WorkingArea;
         double ratio=wideScreen.Checked?16.0/9.0:4.0/3.0;
@@ -180,6 +185,7 @@ namespace SamKookFreeNet {
         if(w>area.Width-40){w=area.Width-40;h=(int)(w/ratio);}
         GameOptions.Prepare(AppDomain.CurrentDomain.BaseDirectory,runtime,displayMode.SelectedIndex,wideScreen.Checked,w,h);
         WriteLog("화면: "+displayMode.Text+" / "+(displayMode.SelectedIndex==0?"게임 원본 비율":wideScreen.Checked?"16:9 늘림":"4:3 유지")+" / CPU 점유 완화 "+reduceSpin.Checked+" / 멀티 저지연 "+lowLatency.Checked);
+        WriteLog("유닛 선택 한도: "+(extendedSelection.Checked?"36명 (실험 / 전원 동일 설정 필요 / 초상화 12칸)":"12명 (원본)")+" / 원본 실행 파일 보존");
         var monitor=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"GameMonitor.exe");
         if(!File.Exists(monitor)) throw new FileNotFoundException("충돌 진단 도우미가 없습니다. GameMonitor.exe를 런처와 같은 폴더에 두세요.");
         var crashFolder=Path.Combine(runtime,"crashes");

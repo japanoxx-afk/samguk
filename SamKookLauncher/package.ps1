@@ -1,7 +1,7 @@
 param([Parameter(Mandatory=$true)][string]$BuildDirectory,[Parameter(Mandatory=$true)][string]$Version)
 $ErrorActionPreference='Stop'
 if($Version -notmatch '^\d+\.\d+\.\d+$'){throw 'Invalid release version'}
-$files=@('SamKookLauncher.exe','LauncherUpdater.exe','GameMonitor.exe','cnc-ddraw.dll','cnc-ddraw-LICENSE.txt')
+$files=@('SamKookLauncher.exe','LauncherUpdater.exe','GameMonitor.exe','MapPreviewRenderer.exe','cnc-ddraw.dll','cnc-ddraw-LICENSE.txt')
 $paths=@($files | ForEach-Object { Join-Path $BuildDirectory $_ })
 foreach($path in $paths){if(!(Test-Path -LiteralPath $path)){throw "Missing release file: $path"}}
 if((Get-Item -LiteralPath $paths[0]).VersionInfo.FileVersion -ne ($Version+'.0')){throw 'Launcher version mismatch'}

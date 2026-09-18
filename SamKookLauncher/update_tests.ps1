@@ -13,12 +13,13 @@ function Run([string]$exe,[string]$arguments){Start-Process -FilePath $exe -Argu
 $p=Run "$root\new.exe" ('args '+(Q ($root+'\')))
 if(!$p.WaitForExit(5000)){throw 'Argument probe timeout'}
 if([IO.File]::ReadAllText("$root\args.txt") -ne ($root+'\')){throw 'Trailing slash quoting failed'}
-foreach($scenario in @('success','invalid','missinggraphics','locked','rollback')) {
+foreach($scenario in @('success','invalid','missinggraphics','missingrenderer','locked','rollback')) {
  $target=Join-Path $root $scenario; $payload=Join-Path $root ($scenario+'-payload')
  New-Item -ItemType Directory $target,$payload | Out-Null
  Copy-Item "$root\old.exe" "$target\SamKookLauncher.exe"
  Copy-Item "$root\new.exe" "$payload\SamKookLauncher.exe"
  Copy-Item (Join-Path $BuildDirectory 'LauncherUpdater.exe') "$payload\LauncherUpdater.exe"
+ if($scenario -ne 'missingrenderer'){Copy-Item (Join-Path $BuildDirectory 'MapPreviewRenderer.exe') "$payload\MapPreviewRenderer.exe"}
  if($scenario -ne 'missinggraphics'){Copy-Item (Join-Path $BuildDirectory 'cnc-ddraw.dll') "$payload\cnc-ddraw.dll"}
  Copy-Item (Join-Path $BuildDirectory 'cnc-ddraw-LICENSE.txt') "$payload\cnc-ddraw-LICENSE.txt"
  if($scenario -ne 'invalid'){Copy-Item (Join-Path $BuildDirectory 'GameMonitor.exe') "$payload\GameMonitor.exe"}
@@ -33,7 +34,7 @@ foreach($scenario in @('success','invalid','missinggraphics','locked','rollback'
   if($scenario -eq 'locked'){$lock=[IO.File]::Open("$target\GameMonitor.exe",'Open','Read','Read')}
   $helper=Run (Join-Path $BuildDirectory 'LauncherUpdater.exe') ((Q $zip)+' '+$parent.Id+' '+(Q ($target+'\'))+' '+(Q $ready)+' --silent')
   if(!$helper.WaitForExit(12000)){throw 'Updater timeout'}
-  if($scenario -eq 'invalid' -or $scenario -eq 'missinggraphics' -or $scenario -eq 'locked') {
+  if($scenario -eq 'invalid' -or $scenario -eq 'missinggraphics' -or $scenario -eq 'missingrenderer' -or $scenario -eq 'locked') {
    if($parent.HasExited -or (Test-Path $ready)){throw 'Invalid ZIP let parent exit'}
    if($helper.ExitCode -ne 1){throw 'Invalid ZIP accepted'}
   } else {
@@ -41,6 +42,7 @@ foreach($scenario in @('success','invalid','missinggraphics','locked','rollback'
    $expected=if($scenario -eq 'success'){'new'}else{'old'}
    if([IO.File]::ReadAllText("$target\restarted.txt") -ne $expected){throw 'Wrong restarted executable'}
    if($scenario -eq 'success' -and (Get-FileHash "$target\cnc-ddraw.dll").Hash -ne (Get-FileHash (Join-Path $BuildDirectory 'cnc-ddraw.dll')).Hash){throw 'Graphics module not updated'}
+   if($scenario -eq 'success' -and (Get-FileHash "$target\MapPreviewRenderer.exe").Hash -ne (Get-FileHash (Join-Path $BuildDirectory 'MapPreviewRenderer.exe')).Hash){throw 'Preview module not updated'}
    if($scenario -eq 'rollback' -and (Get-FileHash "$target\SamKookLauncher.exe").Hash -ne (Get-FileHash "$root\old.exe").Hash){throw 'Rollback hash mismatch'}
   }
   "PASS updater $scenario"

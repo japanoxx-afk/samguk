@@ -17,6 +17,14 @@ static class RuntimeTests {
   Check(data[0x65802]==0 && data[0x65804]==1 && data[0x65806]==2,"Multiplayer buffers not reduced");
   Check(BitConverter.ToInt32(original,0x42f6c)==6 && original[0x65806]==6,"Original multiplayer logic modified");
   File.WriteAllBytes(Path.Combine(root,"performance-test.exe"),data);
+  var expanded=(byte[])asm.GetType("SamKookFreeNet.SelectionPatch").GetMethod("Apply").Invoke(null,new object[]{data});
+  File.WriteAllBytes(Path.Combine(root,"selection36-test.exe"),expanded);
+  Check(BitConverter.ToUInt16(expanded,0x44556)==36,"Drag selection bound not expanded");
+  Check(BitConverter.ToUInt16(data,0x44556)==12,"Selection patch modified input");
+  Check(expanded[0x1a24b]==12 && expanded[0x3425d]==12,"Portrait bounds must stay at twelve");
+  bool rejected=false;var changed=(byte[])data.Clone();changed[0x44556]=13;
+  try{asm.GetType("SamKookFreeNet.SelectionPatch").GetMethod("Apply").Invoke(null,new object[]{changed});}catch(TargetInvocationException ex){rejected=ex.InnerException is InvalidDataException;}
+  Check(rejected,"Unknown selection instructions accepted");
   var options=asm.GetType("SamKookFreeNet.GameOptions");
   foreach(int mode in new[]{1,2})foreach(bool wide in new[]{true,false}) {
    var config=(string)options.GetMethod("Config").Invoke(null,new object[]{mode,wide,1280,720});

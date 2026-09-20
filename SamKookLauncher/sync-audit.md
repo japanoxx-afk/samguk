@@ -1,5 +1,34 @@
 # v1.11.1 split-session investigation
 
+## v1.11.2 crash follow-up
+
+WER dump SamKook.FreeNet.exe.68264.dmp (2026-09-21 01:55:26) has AV execute/read
+at 4403691E and return address 406347. ESI=4A52C8 is unit record 100,
+type 24, owner 0, kind 0, HP 75, action 1081. Original 406336/406339 indexes
+the 64-entry action table with the low byte 81, reading non-code string data
+at entry 129. Sync safety latch 63D100 is zero. Thus this is not an activated
+v1.11.1 fail-stop, and the fault is not a heap cleanup failure.
+
+Native command 0D00 at 43A4E7 accepts a live target without verifying it is a
+building. It writes 1081 at 43A5CB and subtracts building-upgrade costs. Giving
+the original this packet for a soldier reproduces the exact dump call target.
+The dump alone does not identify why the real match generated/applied that
+target (stale entity ID, command/UI issue or prior divergent state remain open).
+
+Added target kind/owner/id, queue and building-type bounds before any mutation
+at 43A4E7. Native AI helper 41F630 similarly rejects non-building targets.
+The original valid building path remains byte-for-byte equivalent in tests.
+Unit dispatcher 406336 now checks index <64. Out-of-range values use fail-stop
+reason 4, storing unit/action/kind/type in record offsets 48..60, then unwind
+the dispatcher. It does not silently change the unit or erase invalid state.
+The main loop handles exit; other units may finish that same simulation tick.
+Compatibility profile is sync-safety-2 to isolate this rule change.
+
+unit_dispatch_test.py reproduces original invalid target assignment and exact
+call, covers bad IDs/owner/queue/type, valid building equivalence, all 256
+action indices on base/observer12/observer36 images, and AI non-building guard.
+APIs are stubbed. Real match and initial bad-command provenance are unverified.
+
 User reports A and B eventually simulate different games, including in the
 original executable. Available freenet.log covers lobby/auth/room traffic,
 not the DirectPlay gameplay stream, so it cannot establish the first divergence.

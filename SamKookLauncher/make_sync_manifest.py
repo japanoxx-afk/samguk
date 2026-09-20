@@ -221,4 +221,89 @@ reset=block('new_match',f'''
  ret
 ''')
 hook(0x443115,5,reset,0xe8);hook(0x443340,5,reset,0xe8)
+
+# 0D00 is building reconstruction/upgrade. The original accepts a live soldier
+# as its target and writes building-only 1081 into its unit command field.
+upgrade=block('upgrade_target', '''
+ pushfd
+ pushad
+ cmp byte ptr [esi+8], 16
+ jb reject
+ movzx eax, word ptr [esi+9]
+ test eax, eax
+ je reject
+ cmp eax, 1699
+ ja reject
+ imul eax, eax, 292
+ cmp byte ptr [eax+0x49e0be], 1
+ jne reject
+ mov edx, [esp+56]
+ cmp edx, 8
+ jae reject
+ cmp byte ptr [eax+0x49e0bd], dl
+ jne reject
+ cmp word ptr [esi+11], 10
+ jae reject
+ movzx edx, word ptr [esi+13]
+ test edx, edx
+ je reject
+ cmp edx, 61
+ ja reject
+ popad
+ popfd
+ movsx eax, word ptr [esi+9]
+ lea ecx, [eax+eax*8]
+ jmp 0x43a4ee
+reject:
+ popad
+ popfd
+ jmp 0x43b82f
+''')
+hook(0x43a4e7,7,upgrade)
+
+ai_upgrade=block('ai_upgrade_target','''
+ mov eax, [esp+4]
+ cmp byte ptr [eax+6], 1
+ jne reject
+ mov eax, [esp+12]
+ push ebx
+ jmp 0x41f635
+reject:
+ xor eax, eax
+ ret
+''')
+hook(0x41f630,5,ai_upgrade)
+
+# Verified function table is 64 entries, followed by text, not more functions.
+# Do not turn a corrupt command into an idle unit: stop and preserve evidence.
+dispatch=block('unit_dispatch',f'''
+ cmp eax, 64
+ jae invalid
+ lea eax, [eax+eax*2]
+ mov eax, [eax*8+0x462940]
+ jmp 0x406340
+invalid:
+ pushfd
+ pushad
+ cmp dword ptr [{FLAG}], 0
+ jne stopped
+ movzx eax, word ptr [esi+2]
+ mov [{RECORD+48}], eax
+ movzx eax, word ptr [esi+18]
+ mov [{RECORD+52}], eax
+ movzx eax, byte ptr [esi+6]
+ mov [{RECORD+56}], eax
+ movzx eax, byte ptr [esi+4]
+ mov [{RECORD+60}], eax
+ mov eax, 4
+ mov edx, -1
+ call {fail}
+stopped:
+ popad
+ popfd
+ pop esi
+ pop ebx
+ ret
+''')
+hook(0x406336,10,dispatch)
 print('\n'.join(rows))

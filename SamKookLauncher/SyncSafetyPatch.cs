@@ -9,7 +9,7 @@ namespace SamKookFreeNet {
  // Applied last to the SHA256-validated runtime copy. No new wire packets.
  static class SyncSafetyPatch {
   public static string Profile(bool latency,bool selection,bool rice,bool observer) {
-   return "sync-safety-1;latency="+latency+";selection36="+selection+";rice="+rice+";observer2="+observer;
+   return "sync-safety-2;latency="+latency+";selection36="+selection+";rice="+rice+";observer2="+observer;
   }
   public static byte[] Apply(byte[] input,string logPath,bool latency,bool selection,bool rice,bool observer) {
    int pe=BitConverter.ToInt32(input,0x3c),opt=pe+24;
@@ -57,8 +57,9 @@ namespace SamKookFreeNet {
    int o=b.Length-256;
    if(BitConverter.ToUInt32(b,o)!=0x314e5953 || BitConverter.ToUInt32(b,o+4)!=1)throw new InvalidDataException("동기화 기록 형식 오류");
    var s=new StringBuilder();uint reason=BitConverter.ToUInt32(b,o+8);
-   s.AppendLine("분리 진행 보호로 대전을 중단했습니다. 자동 재동기화된 것은 아닙니다.");
-   s.AppendLine("원인 경로: "+(reason==1?"응답 대기 후 상대 제외 요청":reason==2?"원본 동기화 검사값 불일치":reason==3?"상대의 강제 제외 통지 수신":"알 수 없음"));
+   s.AppendLine("게임 안전성 보호로 대전을 중단했습니다. 자동 복구된 것은 아닙니다.");
+   s.AppendLine("원인 경로: "+(reason==1?"응답 대기 후 상대 제외 요청":reason==2?"원본 동기화 검사값 불일치":reason==3?"상대의 강제 제외 통지 수신":reason==4?"유닛 행동 함수 범위 초과 차단":"알 수 없음"));
+   if(reason==4)s.AppendLine("unit="+BitConverter.ToUInt32(b,o+48)+" action=0x"+BitConverter.ToUInt32(b,o+52).ToString("X4")+" kind="+BitConverter.ToUInt32(b,o+56)+" type="+BitConverter.ToUInt32(b,o+60));
    s.AppendLine("frame="+BitConverter.ToUInt32(b,o+12)+" localSlot="+BitConverter.ToUInt32(b,o+16)+" peerSlot="+BitConverter.ToInt32(b,o+20));
    s.AppendLine("rng="+BitConverter.ToUInt32(b,o+24).ToString("X8")+" rngCalls="+BitConverter.ToUInt32(b,o+28)+" requiredMask="+BitConverter.ToUInt32(b,o+32).ToString("X")+" readyMask="+BitConverter.ToUInt32(b,o+36).ToString("X"));
    for(int slot=0;slot<8;slot++) {

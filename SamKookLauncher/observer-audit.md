@@ -1,8 +1,8 @@
-# Observer implementation — opt-in prerelease trial
+# Observer implementation — opt-in experimental feature in v1.10.0
 
 Status: local v1.10.0 implementation and component tests completed; live three-PC
 observer validation outstanding. The launcher exposes a default-off trial option.
-The package is published as prerelease v1.10.0-test.1; no stable release or update feed change is made. This document does
+At the user's request, v1.10.0 is distributed through the normal launcher update channel after the initial v1.10.0-test.1 prerelease. The feature remains experimental and default-off. This document does
 not claim live multiplayer spectator correctness.
 
 Original executable SHA256:

@@ -116,3 +116,28 @@ observers remain excluded. 165 room compositions are executed through the full
 native counting/admission path in both 12/36-selection builds. The host remains
 a player; host-observer support is not part of this fix. Live two-PC verification
 is still needed, and the feature remains default-off and experimental.
+
+## v1.10.3 full outcome-dispatch regression fix
+
+User confirmed A can now join B's room and observe both B and a computer, but
+receives a defeat dialog shortly after starting. The preceding tests covered
+the two outcome callbacks only, not their caller's subsequent fallback.
+
+Native `447AA0` invokes defeat callback `61304C`, then victory callback
+`613048`. Even when both return zero, `447AD5..447B2E` checks the local
+building counts (`49B17C`) and unit counts (`49B0C8`). With both empty it sets
+dialog kind `477FA8=18` and tail-calls `4243E0`. Observers intentionally have
+no starting units/buildings, so the existing callback exclusions were not
+sufficient. `observer_outcome_test.py` reproduces this exact loss path on the
+v1.10.2 observer executable.
+
+New hook `447AD5` returns only for an active local observer. Other local
+players replay the original `movsx ecx,[59EE52]` and resume at `447ADC`.
+The global defeat scan and victory callback still run before this guard;
+there is no forced alliance, fake building or change to other players' results.
+All seven non-host observer slots, 100 repeated dispatcher checks, ordinary
+and inactive-mode loss, human loss and computer defeat leading to player
+victory pass in 12/36-selection builds. These execute native dispatch/callback
+code with UI/departure API stubs, not a real two-PC game. Actual updated-game
+confirmation is still required. The trial's manual observer exit after the
+match remains unchanged.

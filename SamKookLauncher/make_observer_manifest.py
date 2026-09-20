@@ -617,6 +617,22 @@ normal:
 ''')
 hook(0x4487f0, 7, local_victory)
 
+# The outcome dispatcher has a SECOND defeat check after both callbacks:
+# zero local buildings and units -> loss dialog (447B25). Observers deliberately
+# have neither. Guard only this fallback, after the global scan has still run.
+empty_army = block('empty_army_guard', f'''
+    push eax
+    movzx eax, byte ptr [0x59ee52]
+    call {is_observer}
+    pop eax
+    jnc normal
+    ret
+normal:
+    movsx ecx, byte ptr [0x59ee52]
+    jmp 0x447adc
+''')
+hook(0x447ad5, 7, empty_army)
+
 # No unit ownership transfer, ally-mask mutation or defeat counting on observer
 # departure. FD is only set when the native synchronized departure path calls us.
 depart = block('departure', f'''

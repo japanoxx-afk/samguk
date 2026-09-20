@@ -63,6 +63,7 @@ static class RuntimeTests {
    if(rally && timer)File.WriteAllBytes(Path.Combine(root,"rice-"+(selection?"36":"12")+".exe"),rice);
    var observer=(byte[])asm.GetType("SamKookFreeNet.ObserverPatch").GetMethod("Apply").Invoke(null,new object[]{rice});
    Check(observer[0x3a210]==0xe9 && rice[0x3a210]==0x53,"Observer receive gate or source preservation failed");
+   Check(observer[0x47ad5]==0xe9 && rice[0x47ad5]==0x0f,"Observer empty-army fallback hook missing or source modified");
    observer=(byte[])lifecycle.Invoke(null,new object[]{observer});
    if(rally && timer)File.WriteAllBytes(Path.Combine(root,"observer-"+(selection?"36":"12")+".exe"),observer);
   }

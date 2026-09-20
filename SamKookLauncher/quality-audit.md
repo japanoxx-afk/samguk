@@ -41,3 +41,23 @@ retain its 65536 bytes. Rally code +16384 (<=1024), timer +17408 (<=1024), ASCII
 format +60000. Existing selection data +32768..45055 and code +512..2559 do not
 overlap. Code/format zero checks and hook expected-byte checks reject collisions.
 Both features disabled returns the input unchanged. Original EXE is preserved.
+
+## v1.9.0 rice rally
+
+- Hook VA 412539 (9 bytes) follows the land-unit production rally setup. Original
+  code always uses movement 2003, ignoring the context at the destination.
+- Replay `mov ecx,[esi+18]; mov [eax+49E0D0],ecx`, then check newborn type 1/11/23
+  (the same workers as native 4386E4). Require land unit and bounded x/y <232.
+- Native 4388F0 queries terrain class at `5DA07C + y*232 + x`; class 3 resolves
+  to command 2009. The hook invokes the original 437FF0 command application with
+  this order, ground target 0 and the producer's rally coordinates. It preserves
+  the 16-byte command scratch area 4868C8..4868D7, registers and flags; selections
+  and packet format are unchanged. Code occupies .fnfix+18432..19455.
+- `rice_rally_test.py` executes original production 4123B0 (allocator, placement,
+  initial allocation and sound stubbed). For all three worker types, the complete
+  292-byte newborn record matches native manual 438770 -> 437FF0 harvest behavior.
+  An independent simulated peer with different local player ID matches too.
+- Guard tests cover ordinary/depleted ground, soldiers, no rally and coordinate
+  bounds in both 12/36 selection modes. All real multiplayer peers MUST install
+  the new patch with the same option; automatic peer capability negotiation is
+  not implemented. No real two-PC gameplay verification is claimed.

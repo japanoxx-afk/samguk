@@ -47,10 +47,16 @@ static class RuntimeTests {
    Check((result[0x42d1b]==0xe9)==timer,"Timer toggle incorrect");
    Check((BitConverter.ToInt32(result,0x333d6)!=0x1496)==rally,"Rally toggle incorrect");
    File.WriteAllBytes(Path.Combine(root,"quality-"+(selection?"36":"12")+"-"+(rally?"rally":"off")+"-"+(timer?"timer":"off")+".exe"),result);
+   var rice=(byte[])asm.GetType("SamKookFreeNet.GameQualityPatch").GetMethod("ApplyRiceRally").Invoke(null,new object[]{result});
+   Check(rice[0x12539]==0xe9 && result[0x12539]==0x8b,"Rice rally hook or preservation failed");
+   if(rally && timer)File.WriteAllBytes(Path.Combine(root,"rice-"+(selection?"36":"12")+".exe"),rice);
   }
   changed=(byte[])data.Clone();changed[0x333d6]^=1;rejected=false;
   try{quality.Invoke(null,new object[]{changed,true,true});}catch(TargetInvocationException ex){rejected=ex.InnerException is InvalidDataException;}
   Check(rejected,"Unknown rally instructions accepted");
+  changed=(byte[])data.Clone();changed[0x12539]^=1;rejected=false;
+  try{asm.GetType("SamKookFreeNet.GameQualityPatch").GetMethod("ApplyRiceRally").Invoke(null,new object[]{changed});}catch(TargetInvocationException ex){rejected=ex.InnerException is InvalidDataException;}
+  Check(rejected,"Unknown production instructions accepted");
   var options=asm.GetType("SamKookFreeNet.GameOptions");
   foreach(int mode in new[]{1,2})foreach(bool wide in new[]{true,false}) {
    var config=(string)options.GetMethod("Config").Invoke(null,new object[]{mode,wide,1280,720});

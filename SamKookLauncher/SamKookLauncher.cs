@@ -15,8 +15,8 @@ using System.Windows.Forms;
 using System.Reflection;
 
 [assembly: AssemblyTitle("SamKook FreeNet Launcher")]
-[assembly: AssemblyVersion("1.8.1.0")]
-[assembly: AssemblyFileVersion("1.8.1.0")]
+[assembly: AssemblyVersion("1.9.0.0")]
+[assembly: AssemblyFileVersion("1.9.0.0")]
 
 namespace SamKookFreeNet {
   static class Program {
@@ -60,7 +60,7 @@ namespace SamKookFreeNet {
   }
 
   sealed class LauncherForm : Form {
-    const string LauncherVersion = "1.8.1";
+    const string LauncherVersion = "1.9.0";
     const string DefaultGame = @"C:\Users\seo\Downloads\DGGL\Games\SamKook_Win\SamKook.exe";
     readonly TextBox gamePath = new TextBox();
     readonly TextBox serverAddress = new TextBox();
@@ -68,6 +68,7 @@ namespace SamKookFreeNet {
     readonly Button play = new Button();
     readonly Button serverButton = new Button();
     readonly Button update = new Button();
+    readonly Button mapDownload=new Button();
     readonly ComboBox displayMode=new ComboBox { DropDownStyle=ComboBoxStyle.DropDownList };
     readonly CheckBox wideScreen=new CheckBox { Text="16:9 늘려 표시 (시야 확장 아님)",AutoSize=true };
     readonly CheckBox reduceSpin=new CheckBox { Text="송신 스레드 CPU 점유 완화",AutoSize=true };
@@ -76,13 +77,14 @@ namespace SamKookFreeNet {
     readonly CheckBox crashDiagnostic=new CheckBox { Text="충돌 진단 모드",AutoSize=true };
     readonly CheckBox rightRally=new CheckBox { Text="우클릭 집결 장소 지정",AutoSize=true };
     readonly CheckBox gameTimer=new CheckBox { Text="우측 상단 게임 타이머",AutoSize=true };
+    readonly CheckBox riceRally=new CheckBox { Text="쌀 집결 자동 채집 (모든 PC 동일 설정)",AutoSize=true };
     readonly LobbyServer server;
     readonly object logLock = new object();
 
     public LauncherForm() {
       Text = "삼국통일 FreeNet 런처";
-      ClientSize = new Size(720, 640);
-      MinimumSize = new Size(740, 680);
+      ClientSize = new Size(720, 670);
+      MinimumSize = new Size(740, 710);
       Font = new Font("맑은 고딕", 10F);
       StartPosition = FormStartPosition.CenterScreen;
 
@@ -122,20 +124,24 @@ namespace SamKookFreeNet {
       rightRally.Checked=LoadSetting("right-rally.txt","true")=="true";rightRally.Location=new Point(20,380);
       gameTimer.Checked=LoadSetting("game-timer.txt","true")=="true";gameTimer.Location=new Point(305,380);
       Controls.AddRange(new Control[]{rightRally,gameTimer});
+      riceRally.Checked=LoadSetting("rice-rally.txt","true")=="true";riceRally.Location=new Point(20,410);Controls.Add(riceRally);
       var latency=new Button { Text="네트워크 지연 측정",Location=new Point(215,242),Size=new Size(180,30) };
       latency.Click+=async (s,e)=>{ latency.Enabled=false;try{await MeasureLatency();}catch(Exception ex){WriteLog("지연 측정 실패: "+ex.Message);}finally{latency.Enabled=true;} };
       var preview=new Button { Text="맵 미니맵 프리뷰",Location=new Point(410,242),Size=new Size(180,30) };
       preview.Click+=(s,e)=>{try{MapPreview.Show(this,gamePath.Text.Trim());}catch(Exception ex){WriteLog("맵 프리뷰 실패: "+ex.Message);MessageBox.Show(this,ex.Message,"맵 프리뷰");}};
+      mapDownload.Text="맵 다운로드";mapDownload.Location=new Point(600,242);mapDownload.Size=new Size(100,30);
+      mapDownload.Click+=async (s,e)=>{SavePath();await DownloadMaps(true);};Controls.Add(mapDownload);
       Controls.AddRange(new Control[]{displayMode,wideScreen,reduceSpin,lowLatency,extendedSelection,crashDiagnostic,latency,preview});
-      var displayHint=new Label { Text="저지연·36명 선택은 모든 PC 동일 설정 / 36명: 초상화 12칸 유지, 저장 후 부대는 12명까지 복원",AutoSize=true,Location=new Point(20,410),ForeColor=Color.DimGray,Font=new Font("맑은 고딕",8F) };
+      var displayHint=new Label { Text="멀티: 쌀 집결은 전원 v1.9.0 이상·동일 설정 / 저지연·36명도 동일 설정 필요",AutoSize=true,Location=new Point(20,440),ForeColor=Color.DimGray,Font=new Font("맑은 고딕",8F) };
       Controls.Add(displayHint);
-      log.Location = new Point(20, 440); log.Size = new Size(675, 175); log.Multiline = true; log.ReadOnly = true;
+      log.Location = new Point(20, 470); log.Size = new Size(675, 175); log.Multiline = true; log.ReadOnly = true;
       log.ScrollBars = ScrollBars.Vertical; log.BackColor = Color.FromArgb(25,25,28); log.ForeColor = Color.Gainsboro;
       log.Font = new Font("Consolas", 9F);
       Controls.AddRange(new Control[] { title, version, hint, pathLabel, gamePath, browse, serverLabel, serverAddress, serverHint, hosts, serverButton, play, update, log });
       server = new LobbyServer(WriteLog);
       FormClosing += (s,e) => server.Stop();
       WriteLog("런처 v"+LauncherVersion+" 준비됨. 로컬 서버 포트: TCP 7104");
+      Shown+=async (s,e)=>await DownloadMaps(false);
     }
 
     string LoadPath() {
@@ -209,6 +215,7 @@ namespace SamKookFreeNet {
         if(extendedSelection.Checked && MessageBox.Show(this,"36명 선택은 실험 기능입니다. 실제 A·B PC 대전 검증은 아직 완료되지 않았습니다.\n\n모든 참가자가 v1.7.0 이상에서 '유닛 선택 36명'을 켜야 합니다.\n12명 설정 또는 구버전과 함께 플레이하면 동기화가 어긋날 수 있습니다.\n\n초상화는 처음 12명만 표시됩니다. 기존 저장 형식을 유지하므로 저장 후 불러올 때 부대 지정은 처음 12명까지만 복원됩니다.\n원본 SamKook.exe는 수정하지 않으며 체크 해제 후 재실행하면 12명으로 돌아갑니다.\n\n같은 설정을 확인했으며 36명 모드로 실행할까요?","36명 선택 확장",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
         SaveSetting("selection-36.txt",extendedSelection.Checked?"true":"false");
         SaveSetting("right-rally.txt",rightRally.Checked?"true":"false");SaveSetting("game-timer.txt",gameTimer.Checked?"true":"false");
+        SaveSetting("rice-rally.txt",riceRally.Checked?"true":"false");
         // Single-player must never require a reachable lobby or start a server.
         // Multiplayer diagnostics remain available through the explicit test button.
         WriteLog("서버 연결 검사 없이 게임을 실행합니다. 싱글플레이는 서버가 필요하지 않습니다.");
@@ -221,6 +228,7 @@ namespace SamKookFreeNet {
         if(lowLatency.Checked)QueuePatch.ReduceMultiplayerLatency(data);
         if(extendedSelection.Checked)data=SelectionPatch.Apply(data);
         data=GameQualityPatch.Apply(data,rightRally.Checked,gameTimer.Checked);
+        if(riceRally.Checked)data=GameQualityPatch.ApplyRiceRally(data);
         File.WriteAllBytes(patched,data);
         var area=Screen.FromControl(this).WorkingArea;
         double ratio=wideScreen.Checked?16.0/9.0:4.0/3.0;
@@ -230,6 +238,7 @@ namespace SamKookFreeNet {
         WriteLog("화면: "+displayMode.Text+" / "+(displayMode.SelectedIndex==0?"게임 원본 비율":wideScreen.Checked?"16:9 늘림":"4:3 유지")+" / CPU 점유 완화 "+reduceSpin.Checked+" / 멀티 저지연 "+lowLatency.Checked);
         WriteLog("유닛 선택 한도: "+(extendedSelection.Checked?"36명 (실험 / 전원 동일 설정 필요 / 초상화 12칸)":"12명 (원본)")+" / 원본 실행 파일 보존");
         WriteLog("우클릭 집결: "+rightRally.Checked+" (집결 버튼이 활성화된 내 건물 / 지형 우클릭) / 게임 타이머: "+gameTimer.Checked+" (게임 진행 시간)");
+        WriteLog("쌀 집결 자동 채집: "+riceRally.Checked+" / 멀티는 전원 v1.9.0 이상에서 같은 설정을 사용하세요.");
         var monitor=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"GameMonitor.exe");
         if(!File.Exists(monitor)) throw new FileNotFoundException("충돌 진단 도우미가 없습니다. GameMonitor.exe를 런처와 같은 폴더에 두세요.");
         var crashFolder=Path.Combine(runtime,"crashes");
@@ -254,9 +263,20 @@ namespace SamKookFreeNet {
       var data=QueuePatch.ApplyAddress(File.ReadAllBytes(source),targetAddress);
       File.WriteAllBytes(destination, data);
     }
+    async Task DownloadMaps(bool notify) {
+      mapDownload.Enabled=false;
+      try {
+        var result=await MapDownloads.Install(gamePath.Text.Trim());WriteLog(result);
+        if(notify)MessageBox.Show(this,result,"맵 다운로드",MessageBoxButtons.OK,MessageBoxIcon.Information);
+      } catch(Exception ex) {
+        WriteLog("맵 다운로드 보류 (게임 실행에는 영향 없음): "+ex.Message);
+        if(notify)MessageBox.Show(this,ex.Message,"맵 다운로드",MessageBoxButtons.OK,MessageBoxIcon.Warning);
+      } finally {if(!IsDisposed)mapDownload.Enabled=true;}
+    }
     async Task CheckUpdate() {
       update.Enabled = false;
       try {
+        SavePath();await DownloadMaps(false);
         WriteLog("업데이트 확인 중... 현재 버전 v"+LauncherVersion);
         ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
         using (var http = new HttpClient()) {

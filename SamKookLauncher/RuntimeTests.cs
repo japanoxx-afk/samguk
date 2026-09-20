@@ -50,6 +50,9 @@ static class RuntimeTests {
    var rice=(byte[])asm.GetType("SamKookFreeNet.GameQualityPatch").GetMethod("ApplyRiceRally").Invoke(null,new object[]{result});
    Check(rice[0x12539]==0xe9 && result[0x12539]==0x8b,"Rice rally hook or preservation failed");
    if(rally && timer)File.WriteAllBytes(Path.Combine(root,"rice-"+(selection?"36":"12")+".exe"),rice);
+   var observer=(byte[])asm.GetType("SamKookFreeNet.ObserverPatch").GetMethod("Apply").Invoke(null,new object[]{rice});
+   Check(observer[0x3a210]==0xe9 && rice[0x3a210]==0x53,"Observer receive gate or source preservation failed");
+   if(rally && timer)File.WriteAllBytes(Path.Combine(root,"observer-"+(selection?"36":"12")+".exe"),observer);
   }
   changed=(byte[])data.Clone();changed[0x333d6]^=1;rejected=false;
   try{quality.Invoke(null,new object[]{changed,true,true});}catch(TargetInvocationException ex){rejected=ex.InnerException is InvalidDataException;}
@@ -57,6 +60,9 @@ static class RuntimeTests {
   changed=(byte[])data.Clone();changed[0x12539]^=1;rejected=false;
   try{asm.GetType("SamKookFreeNet.GameQualityPatch").GetMethod("ApplyRiceRally").Invoke(null,new object[]{changed});}catch(TargetInvocationException ex){rejected=ex.InnerException is InvalidDataException;}
   Check(rejected,"Unknown production instructions accepted");
+  changed=(byte[])data.Clone();changed[0x3a210]^=1;rejected=false;
+  try{asm.GetType("SamKookFreeNet.ObserverPatch").GetMethod("Apply").Invoke(null,new object[]{changed});}catch(TargetInvocationException ex){rejected=ex.InnerException is InvalidDataException;}
+  Check(rejected,"Unknown observer instructions accepted");
   var options=asm.GetType("SamKookFreeNet.GameOptions");
   foreach(int mode in new[]{1,2})foreach(bool wide in new[]{true,false}) {
    var config=(string)options.GetMethod("Config").Invoke(null,new object[]{mode,wide,1280,720});

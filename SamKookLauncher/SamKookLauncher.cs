@@ -15,8 +15,8 @@ using System.Windows.Forms;
 using System.Reflection;
 
 [assembly: AssemblyTitle("SamKook FreeNet Launcher")]
-[assembly: AssemblyVersion("1.9.1.0")]
-[assembly: AssemblyFileVersion("1.9.1.0")]
+[assembly: AssemblyVersion("1.10.0.0")]
+[assembly: AssemblyFileVersion("1.10.0.0")]
 
 namespace SamKookFreeNet {
   static class Program {
@@ -60,7 +60,7 @@ namespace SamKookFreeNet {
   }
 
   sealed class LauncherForm : Form {
-    const string LauncherVersion = "1.9.1";
+    const string LauncherVersion = "1.10.0";
     const string DefaultGame = @"C:\Users\seo\Downloads\DGGL\Games\SamKook_Win\SamKook.exe";
     readonly TextBox gamePath = new TextBox();
     readonly TextBox serverAddress = new TextBox();
@@ -78,13 +78,14 @@ namespace SamKookFreeNet {
     readonly CheckBox rightRally=new CheckBox { Text="우클릭 집결 장소 지정",AutoSize=true };
     readonly CheckBox gameTimer=new CheckBox { Text="우측 상단 게임 타이머",AutoSize=true };
     readonly CheckBox riceRally=new CheckBox { Text="쌀 집결 자동 채집 (모든 PC 동일 설정)",AutoSize=true };
+    readonly CheckBox observerMode=new CheckBox { Text="관전자 슬롯 (시험 / 모든 PC 동일 설정)",AutoSize=true };
     readonly LobbyServer server;
     readonly object logLock = new object();
 
     public LauncherForm() {
       Text = "삼국통일 FreeNet 런처";
-      ClientSize = new Size(720, 670);
-      MinimumSize = new Size(740, 710);
+      ClientSize = new Size(720, 700);
+      MinimumSize = new Size(740, 740);
       Font = new Font("맑은 고딕", 10F);
       StartPosition = FormStartPosition.CenterScreen;
 
@@ -125,6 +126,7 @@ namespace SamKookFreeNet {
       gameTimer.Checked=LoadSetting("game-timer.txt","true")=="true";gameTimer.Location=new Point(305,380);
       Controls.AddRange(new Control[]{rightRally,gameTimer});
       riceRally.Checked=LoadSetting("rice-rally.txt","true")=="true";riceRally.Location=new Point(20,410);Controls.Add(riceRally);
+      observerMode.Checked=LoadSetting("observer-mode.txt","false")=="true";observerMode.Location=new Point(20,440);Controls.Add(observerMode);
       var latency=new Button { Text="네트워크 지연 측정",Location=new Point(215,242),Size=new Size(180,30) };
       latency.Click+=async (s,e)=>{ latency.Enabled=false;try{await MeasureLatency();}catch(Exception ex){WriteLog("지연 측정 실패: "+ex.Message);}finally{latency.Enabled=true;} };
       var preview=new Button { Text="맵 미니맵 프리뷰",Location=new Point(410,242),Size=new Size(180,30) };
@@ -132,9 +134,9 @@ namespace SamKookFreeNet {
       mapDownload.Text="맵 다운로드";mapDownload.Location=new Point(600,242);mapDownload.Size=new Size(100,30);
       mapDownload.Click+=async (s,e)=>{SavePath();await DownloadMaps(true);};Controls.Add(mapDownload);
       Controls.AddRange(new Control[]{displayMode,wideScreen,reduceSpin,lowLatency,extendedSelection,crashDiagnostic,latency,preview});
-      var displayHint=new Label { Text="멀티: 쌀 집결은 전원 v1.9.0 이상·동일 설정 / 저지연·36명도 동일 설정 필요",AutoSize=true,Location=new Point(20,440),ForeColor=Color.DimGray,Font=new Font("맑은 고딕",8F) };
+      var displayHint=new Label { Text="멀티: 관전 모드·저지연·36명·쌀 집결 설정은 모든 PC가 같아야 합니다.",AutoSize=true,Location=new Point(20,470),ForeColor=Color.DimGray,Font=new Font("맑은 고딕",8F) };
       Controls.Add(displayHint);
-      log.Location = new Point(20, 470); log.Size = new Size(675, 175); log.Multiline = true; log.ReadOnly = true;
+      log.Location = new Point(20, 500); log.Size = new Size(675, 175); log.Multiline = true; log.ReadOnly = true;
       log.ScrollBars = ScrollBars.Vertical; log.BackColor = Color.FromArgb(25,25,28); log.ForeColor = Color.Gainsboro;
       log.Font = new Font("Consolas", 9F);
       Controls.AddRange(new Control[] { title, version, hint, pathLabel, gamePath, browse, serverLabel, serverAddress, serverHint, hosts, serverButton, play, update, log });
@@ -216,6 +218,8 @@ namespace SamKookFreeNet {
         SaveSetting("selection-36.txt",extendedSelection.Checked?"true":"false");
         SaveSetting("right-rally.txt",rightRally.Checked?"true":"false");SaveSetting("game-timer.txt",gameTimer.Checked?"true":"false");
         SaveSetting("rice-rally.txt",riceRally.Checked?"true":"false");
+        if(observerMode.Checked && MessageBox.Show(this,"관전 기능은 3대 PC 실전 검증 전 시험 기능입니다.\n\n플레이어와 관전자 모두 v1.10.0에서 '관전자 슬롯'을 켜세요.\n방장은 플레이어로 남고, 시작 전에 다른 참가자 슬롯을 '관전자'로 바꾸세요.\n관전자는 양쪽 시야를 받으며 유닛 생성·게임 조작·승패 판정에서 제외됩니다.\n일반 대전맵의 새 게임만 테스트하세요. 저장 게임·시나리오·방장 교체는 지원하지 않습니다.\n\n관전 모드를 끈 PC 또는 구버전과는 대전에 함께 입장할 수 없습니다.\n관전자 퇴장·시야·동기화는 실제 3대 PC에서 추가 확인이 필요합니다.\n원본 실행 파일은 보존되며 체크 해제 후 재실행하면 기존 방식으로 돌아갑니다.\n\n시험 모드로 실행할까요?","관전자 슬롯 시험 기능",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
+        SaveSetting("observer-mode.txt",observerMode.Checked?"true":"false");
         // Single-player must never require a reachable lobby or start a server.
         // Multiplayer diagnostics remain available through the explicit test button.
         WriteLog("서버 연결 검사 없이 게임을 실행합니다. 싱글플레이는 서버가 필요하지 않습니다.");
@@ -229,6 +233,7 @@ namespace SamKookFreeNet {
         if(extendedSelection.Checked)data=SelectionPatch.Apply(data);
         data=GameQualityPatch.Apply(data,rightRally.Checked,gameTimer.Checked);
         if(riceRally.Checked)data=GameQualityPatch.ApplyRiceRally(data);
+        if(observerMode.Checked)data=ObserverPatch.Apply(data);
         File.WriteAllBytes(patched,data);
         var area=Screen.FromControl(this).WorkingArea;
         double ratio=wideScreen.Checked?16.0/9.0:4.0/3.0;
@@ -239,6 +244,7 @@ namespace SamKookFreeNet {
         WriteLog("유닛 선택 한도: "+(extendedSelection.Checked?"36명 (실험 / 전원 동일 설정 필요 / 초상화 12칸)":"12명 (원본)")+" / 원본 실행 파일 보존");
         WriteLog("우클릭 집결: "+rightRally.Checked+" (집결 버튼이 활성화된 내 건물 / 지형 우클릭) / 게임 타이머: "+gameTimer.Checked+" (게임 진행 시간)");
         WriteLog("쌀 집결 자동 채집: "+riceRally.Checked+" / 멀티는 전원 v1.9.0 이상에서 같은 설정을 사용하세요.");
+        WriteLog("관전자 슬롯: "+observerMode.Checked+" / 시험 프로토콜 1 / 전원 v1.10.0·동일 설정 / 방장은 플레이어 유지");
         var monitor=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"GameMonitor.exe");
         if(!File.Exists(monitor)) throw new FileNotFoundException("충돌 진단 도우미가 없습니다. GameMonitor.exe를 런처와 같은 폴더에 두세요.");
         var crashFolder=Path.Combine(runtime,"crashes");

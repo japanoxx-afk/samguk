@@ -25,6 +25,18 @@ static class RuntimeTests {
   bool rejected=false;var changed=(byte[])data.Clone();changed[0x44556]=13;
   try{asm.GetType("SamKookFreeNet.SelectionPatch").GetMethod("Apply").Invoke(null,new object[]{changed});}catch(TargetInvocationException ex){rejected=ex.InnerException is InvalidDataException;}
   Check(rejected,"Unknown selection instructions accepted");
+  var quality=asm.GetType("SamKookFreeNet.GameQualityPatch").GetMethod("Apply");
+  foreach(bool selection in new[]{false,true})foreach(bool rally in new[]{false,true})foreach(bool timer in new[]{false,true}) {
+   var source=selection?expanded:data;
+   var result=(byte[])quality.Invoke(null,new object[]{source,rally,timer});
+   Check(source[0x333d5]==0xe8 && source[0x42d1b]==0xa1,"Quality patch modified input");
+   Check((result[0x42d1b]==0xe9)==timer,"Timer toggle incorrect");
+   Check((BitConverter.ToInt32(result,0x333d6)!=0x1496)==rally,"Rally toggle incorrect");
+   File.WriteAllBytes(Path.Combine(root,"quality-"+(selection?"36":"12")+"-"+(rally?"rally":"off")+"-"+(timer?"timer":"off")+".exe"),result);
+  }
+  changed=(byte[])data.Clone();changed[0x333d6]^=1;rejected=false;
+  try{quality.Invoke(null,new object[]{changed,true,true});}catch(TargetInvocationException ex){rejected=ex.InnerException is InvalidDataException;}
+  Check(rejected,"Unknown rally instructions accepted");
   var options=asm.GetType("SamKookFreeNet.GameOptions");
   foreach(int mode in new[]{1,2})foreach(bool wide in new[]{true,false}) {
    var config=(string)options.GetMethod("Config").Invoke(null,new object[]{mode,wide,1280,720});

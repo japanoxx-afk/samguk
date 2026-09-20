@@ -189,6 +189,27 @@ def emulate(path):
         assert run(u,0x42dc25,(0x42dc2a,0x42dc38))==(0x42dc38 if slot==2 else 0x42dc2a)
     print('PASS minimum-player count excludes observers')
 
+    # Exercise the WHOLE native counting loop and final admission decision.
+    # v1.10.0 incorrectly retained native (humans>=2 OR computers>=3), which
+    # rejects the requested A human + B observer + C computer configuration.
+    start_cases=0
+    for humans in range(9):
+        for computers in range(9-humans):
+            for observers in range(9-humans-computers):
+                u=fresh(False)
+                for slot in range(8):
+                    state=1;dpid=0
+                    if slot<humans:state=3;dpid=100+slot
+                    elif slot<humans+observers:
+                        state=3;dpid=100+slot;role(u,slot)
+                    elif slot<humans+observers+computers:state=2
+                    u.mem_write(0x49b046+1124*slot,bytes([state]))
+                    u.mem_write(0x49b02c+1124*slot,dword(dpid))
+                end=run(u,0x42dc17,(0x42dc50,0x42de24))
+                assert (end==0x42dc50)==(humans>=1 and humans+computers>=2), ('start composition',humans,computers,observers)
+                start_cases+=1
+    print('PASS complete native start decision:',start_cases,'compositions; human+computer allowed, observers excluded')
+
     u=fresh();role(u,2)
     for slot in range(3):u.mem_write(0x49b046+1124*slot,b'\x03')
     u.reg_write(UC_X86_REG_EAX,1124);u.reg_write(UC_X86_REG_EDX,2)

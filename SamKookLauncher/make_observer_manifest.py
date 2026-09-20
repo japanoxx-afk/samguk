@@ -436,6 +436,25 @@ skip:
 ''')
 hook(0x42dc25, 5, start_count)
 
+# Native condition is humans>=2 OR computers>=3. After excluding observers,
+# that rejects one human versus one computer with a connected spectator.
+# Count actual combatants together; observer-only opposition is still invalid.
+start_admission = block('start_admission', '''
+    cmp dx, 1
+    jl reject
+    push eax
+    movzx eax, dx
+    movzx ecx, si
+    add eax, ecx
+    cmp eax, 2
+    pop eax
+    jl reject
+    jmp 0x42dc50
+reject:
+    jmp 0x42de24
+''')
+hook(0x42dc40, 6, start_admission)
+
 start = block('start_game', f'''
     pushfd
     pushad

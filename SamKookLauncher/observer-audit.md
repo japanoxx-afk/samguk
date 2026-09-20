@@ -104,3 +104,15 @@ Mocked UI/emulation cannot prove real DirectPlay ordering or rendering behavior.
 Observer network loss still uses native lockstep timeout handling; this is not
 an asynchronous spectator stream. Saved scenarios, script-driven maps and host
 migration are outside this trial. Observer must leave manually after the match.
+
+## v1.10.1 start-admission regression fix
+
+User reported host A human, B observer, C computer could not start. The observer
+exclusion hook was correct, but native 42DC40 still admitted humans>=2 OR
+computers>=3. The prior test checked exclusion only, not the complete decision.
+New tests first reproduced the failure against the v1.10.0 runtime. Hook 42DC40
+now admits humans>=1 AND humans+computers>=2 after the native counting loop;
+observers remain excluded. 165 room compositions are executed through the full
+native counting/admission path in both 12/36-selection builds. The host remains
+a player; host-observer support is not part of this fix. Live two-PC verification
+is still needed, and the feature remains default-off and experimental.

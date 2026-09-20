@@ -21,12 +21,13 @@ def exercise(path,patched):
         def put(a,v):u.mem_write(a,struct.pack('<I',v))
         def get(a):return struct.unpack('<I',u.mem_read(a,4))[0]
         u.mem_write(0x49b028,bytes(1124*8))
-        # B is room host slot 0; A observes a non-host slot.
+        # Host may itself observe; then the active human occupies slot 1.
+        player=1 if watcher==0 else 0
         cpu=2 if watcher!=2 else 3
-        for slot,state in [(0,3),(watcher,3),(cpu,2)]:
+        for slot,state in [(player,3),(watcher,3),(cpu,2)]:
             u.mem_write(0x49b046+1124*slot,bytes([state]))
             u.mem_write(0x49b048+1124*slot,struct.pack('<H',1<<slot))
-        for slot,present in zip((0,cpu),alive):
+        for slot,present in zip((player,cpu),alive):
             if present:u.mem_write(0x49b0ca+1124*slot,b'\x01\x00')
         u.mem_write(ROLE+watcher,bytes([int(observer)]));u.mem_write(ACTIVE,bytes([int(active)]))
         u.mem_write(0x59ee52,bytes([viewer]));u.mem_write(0x611e1a,b'\x02')
@@ -60,7 +61,7 @@ def exercise(path,patched):
         print('PASS reproduction: old observer callbacks return no defeat, but dispatcher still opens loss dialog')
         return
     assert result==0
-    for slot in range(1,8):assert scenario(slot,True,watcher=slot)[1]==0
+    for slot in range(8):assert scenario(slot,True,watcher=slot)[1]==0
     for _ in range(100):run(0x447aa0)
     assert u.mem_read(0x477fa8,2)==b'\0\0'
     assert u.mem_read(0x49b046+1124,1)==b'\x03'

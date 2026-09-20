@@ -51,7 +51,7 @@ def emulate(path):
     def regs(u):return [u.reg_read(r) for r in (UC_X86_REG_EBX,UC_X86_REG_ESI,UC_X86_REG_EDI,UC_X86_REG_EBP)]
 
     # Shared sight direction and resource isolation for each possible non-host.
-    for observer in range(1,8):
+    for observer in range(8):
         u=fresh();role(u,observer)
         for slot in range(8):
             u.mem_write(0x49b046+1124*slot,b'\x03')
@@ -72,28 +72,29 @@ def emulate(path):
                 u.mem_write(0x49e0bd,bytes([owner]))
                 end=run(u,0x442a13,(0x442a3b,0x442aaf))
                 assert (end==0x442a3b)==(viewer==owner or viewer==observer)
-    print('PASS merged native vision: 448 combinations, no opponent/alliance leakage')
+    print('PASS merged native vision: 512 combinations, no opponent/alliance leakage')
 
     # Outgoing + incoming command gates: no movement, production, diplomacy,
     # pause or speed commands; native control/no-op/chat still pass through.
     allowed={0x100,0x300,0x8000,0x8100,0x8200,0x8300,0x8400}
-    for active in (False,True):
-        for observer in (False,True):
-            for command in list(range(0x100,0x2000,0x100))+list(range(0x8000,0x8600,0x100)):
-                deny=active and observer and command not in allowed
-                for inbound in (False,True):
-                    u=fresh(active);u.mem_write(0x59ee52,b'\x02')
-                    if observer:role(u,2)
-                    if inbound:
-                        u.mem_write(STACK+4,dword(2)+dword(0x1009000))
-                        u.mem_write(0x1009000,dword(command))
-                        start,resume=0x43a210,0x43a217
-                    else:
-                        u.mem_write(STACK+4,dword(command))
-                        start,resume=0x438cf0,0x438cf7
-                    end=run(u,start,(STOP,resume))
-                    assert (end==STOP)==deny,(active,observer,command,inbound)
-                    if deny:assert u.reg_read(UC_X86_REG_ESP)==STACK+4
+    for acting_slot in (0,2):
+        for active in (False,True):
+            for observer in (False,True):
+                for command in list(range(0x100,0x2000,0x100))+list(range(0x8000,0x8600,0x100)):
+                    deny=active and observer and command not in allowed
+                    for inbound in (False,True):
+                        u=fresh(active);u.mem_write(0x59ee52,bytes([acting_slot]))
+                        if observer:role(u,acting_slot)
+                        if inbound:
+                            u.mem_write(STACK+4,dword(acting_slot)+dword(0x1009000))
+                            u.mem_write(0x1009000,dword(command))
+                            start,resume=0x43a210,0x43a217
+                        else:
+                            u.mem_write(STACK+4,dword(command))
+                            start,resume=0x438cf0,0x438cf7
+                        end=run(u,start,(STOP,resume))
+                        assert (end==STOP)==deny,(active,observer,command,inbound)
+                        if deny:assert u.reg_read(UC_X86_REG_ESP)==STACK+4
     print('PASS sender/receiver: gameplay denied, transport/chat preserved, ordinary/offline unchanged')
 
     # Map initial unit/building records and native melee start-location gate.
@@ -153,7 +154,7 @@ def emulate(path):
                     assert (end==0x42ccf4)==valid,(sender,command,slot,status)
                     assert bytes(u.mem_read(0x1009000,38))==packet
                     if valid and command!=0x3500:
-                        wanted=slot!=0 and status in (0x40,0x43)
+                        wanted=status in (0x40,0x43)
                         assert u.mem_read(ROLE+slot,1)==bytes([int(wanted)])
     print('PASS role packets: authority, bounds, unused slots, unchanged wire queue')
 
@@ -165,10 +166,10 @@ def emulate(path):
             u.reg_write(UC_X86_REG_EDI,0x100a000);u.mem_write(0x100a000,b'Name\0')
             u.reg_write(UC_X86_REG_ECX,0xffffffff)
             run(u,0x42d4f8,(0x42d4fd,))
-            wanted=status | (0x40 if slot!=0 and status in (0,3) else 0)
+            wanted=status | (0x40 if status in (0,3) else 0)
             assert u.mem_read(packet+5,1)==bytes([wanted])
             assert u.reg_read(UC_X86_REG_ECX)==0xfffffffa
-    print('PASS encoder preserves native string scan and marks only eligible non-host slots')
+    print('PASS encoder preserves native string scan and marks eligible slots including host')
 
     for multiplayer in (False,True):
         u=fresh(False);role(u,2);u.mem_write(0x5173e4,dword(int(multiplayer)))
@@ -206,9 +207,9 @@ def emulate(path):
                     u.mem_write(0x49b046+1124*slot,bytes([state]))
                     u.mem_write(0x49b02c+1124*slot,dword(dpid))
                 end=run(u,0x42dc17,(0x42dc50,0x42de24))
-                assert (end==0x42dc50)==(humans>=1 and humans+computers>=2), ('start composition',humans,computers,observers)
+                assert (end==0x42dc50)==(humans+computers>=2), ('start composition',humans,computers,observers)
                 start_cases+=1
-    print('PASS complete native start decision:',start_cases,'compositions; human+computer allowed, observers excluded')
+    print('PASS complete native start decision:',start_cases,'compositions; two combatants required, including computer vs computer, observers excluded')
 
     u=fresh();role(u,2)
     for slot in range(3):u.mem_write(0x49b046+1124*slot,b'\x03')
@@ -255,6 +256,14 @@ def emulate(path):
         for label in (0x464928,0x46484c,0x464844):ui(cid,0x143,l=label)
         assert len(combos[cid])==5
     cid=0x4b3;selected[cid]=4
+    # Host may choose observer, but never convert its connected slot to AI/open.
+    u.mem_write(0x49b02c,dword(77))
+    for option in (4,3,0,1,2,4):
+        selected[0x4b1]=option
+        assert ui(0x4b1,0x147,caller=0x42da9a)==3
+        assert u.mem_read(ROLE,1)==bytes([int(option==4)])
+        assert u.mem_read(0x49b02c,4)==dword(77)
+    u.mem_write(ROLE,b'\0')
     assert ui(cid,0x147,caller=0x42da9a)==0
     assert u.mem_read(ROLE+2,1)==b'\x01'
     ui(cid,0x14e,w=0);assert selected[cid]==4
@@ -285,24 +294,24 @@ def emulate(path):
     for race_control in range(0x4bb,0x4c3):
         combos[race_control]=[b'Race0',b'Race1',b'Race2',b'Random']
         selected[race_control]=3
-    for status in (0x43,3,0x43):
+    for slot,status in ((slot,status) for slot in (0,2) for status in (0x43,3,0x43)):
         packet=bytearray(38);packet[:4]=dword(0x3100)
-        packet[9:13]=dword(123);packet[13]=2;packet[14]=status;packet[15]=1
+        packet[9:13]=dword(123);packet[13]=slot;packet[14]=status;packet[15]=1
         packet[16:27]=b'ObserverPC\0'
         u.mem_write(0x1009000,bytes(packet))
         u.reg_write(UC_X86_REG_ESP,STACK);u.reg_write(UC_X86_REG_EBP,0x1009000)
         u.reg_write(UC_X86_REG_EDX,0);u.reg_write(UC_X86_REG_EBX,1)
         run(u,0x42ccec,(0x42d2e0,))
-        assert u.mem_read(0x49b046+2248,1)==b'\x03'
-        assert u.mem_read(0x49b02c+2248,4)==dword(123)
-        assert u.mem_read(0x49b030+2248,11)==b'ObserverPC\0'
-        assert u.mem_read(0x59ee52,1)==b'\x02'
-        assert selected[cid]==(4 if status==0x43 else 3)
+        assert u.mem_read(0x49b046+slot*1124,1)==b'\x03'
+        assert u.mem_read(0x49b02c+slot*1124,4)==dword(123)
+        assert u.mem_read(0x49b030+slot*1124,11)==b'ObserverPC\0'
+        assert u.mem_read(0x59ee52,1)==bytes([slot])
+        assert selected[0x4b1+slot]==(4 if status==0x43 else 3)
         assert u.mem_read(0x1009000,38)==bytes(packet)
     u.hook_del(h)
     print('PASS full original snapshot handler: connection/name/local slot, observer-player transitions, UI and wire preservation')
 
-    assert image[0x5f670:0x5f680]==uuid.UUID('9ea51f8d-0411-4d2b-bf03-9bc52fb7a201').bytes_le
+    assert image[0x5f670:0x5f680]==uuid.UUID('62046975-3128-4fd1-91b4-240b14bb2190').bytes_le
     print('PASS isolated DirectPlay app GUID; component checks:',path)
 
 for path in sys.argv[1:]:emulate(path)

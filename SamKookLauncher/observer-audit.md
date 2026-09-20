@@ -141,3 +141,55 @@ victory pass in 12/36-selection builds. These execute native dispatch/callback
 code with UI/departure API stubs, not a real two-PC game. Actual updated-game
 confirmation is still required. The trial's manual observer exit after the
 match remains unchanged.
+
+## v1.11.0 host observer and read-only selected-player inspection
+
+User confirmed v1.10.3 works, then requested host observation and selected
+player resources/production. Protocol 2 GUID is
+`62046975-3128-4fd1-91b4-240b14bb2190`; every participant must update.
+
+Host slot control 4B1 is enabled at 42D8F6. Only a genuine host WM_COMMAND
+GETCURSEL updates its observer role. Host selections always return native
+connected-human state 3: opening/closing/CPU selections cannot destroy the
+host's DPID or transport role. Slot zero is now serialized/deserialized with
+the observer bit; host-only snapshot authority checks remain. Start admission
+requires two combatants (human or CPU), not a human combatant specifically.
+The observer still participates in native lockstep. Host migration/host exit
+while continuing the match is not supported.
+
+Inspection resolves selection word 611E12 only for an active local observer.
+It validates ID 1..1699, live HP, unit/building kind, owner 0..7, non-observer
+owner and connected player/CPU state. Four rendering-only reads at 41CFA3,
+41CFD9, 41D00C, 41D077 use that owner for the existing resource/supply HUD.
+No temporary write to local player ID or resource/ownership data is made.
+The owner-check branch at 418A70 reveals native building detail only for an
+eligible observer; ordinary players replay the original conditional branch.
+
+The draw hook at 442D16 calls native resource rendering first and then draws
+an owner-slot label and unit production queues using native text rendering.
+Queue records are ten 8-byte entries at building+7A. Native production paths
+411965 (land) and 41187E (naval) establish kinds 1 and 9, unit type WORD+7A,
+quantity BYTE+7D, progress WORD+7E / WORD+80. Names use native unit table
+461330 + 84 * type, as at 41A3E6; type is bounded 1..44. Zero total is safe,
+progress is capped at 100%. This queue overlay is not an exhaustive research
+queue implementation; native building detail remains responsible for its
+existing construction/upgrade display. Formats are in reserved observer state
+at ROLE+768/832/896, below the private packet copy at ROLE+1024.
+
+Verified on both 12/36-selection patched builds: 128 owner/viewer/active
+combinations each; resource HUD owner indices; unit names, quantities, last
+queue and progress; zero denominator; unit versus building selection; empty
+queue; invalid/dead/neutral targets; ordinary-player exclusion; detail branch
+and flag preservation; unchanged player/unit/local-ID memory. Existing command
+guards now explicitly test host and peer observers. Full native room snapshot
+handling covers slot zero and slot two with observer/player transitions. All
+512 vision combinations, 165 start compositions, outcome dispatcher including
+host observer, lifecycle, rally/timer, rice-rally and 36-selection tests pass.
+Runtime tests verify embedded hooks and original preservation; six updater
+installation/failure/rollback scenarios and quoted-path checks pass.
+
+Drawing/Win32 APIs are mocked in emulation. Actual visual layout, native text
+rendering and multi-PC gameplay still require user verification. Suggested
+test: host observer + remote player + CPU; select each side's units/buildings,
+queue production, compare displayed resource values against the player, try
+issuing commands, and confirm the observer does not lose after three seconds.

@@ -25,7 +25,7 @@ NAMES = ROLE + 128          # 8 * 64, display labels only
 PACKET = ROLE + 1024        # room dispatch copy; never mutate queued wire bytes
 ks = Ks(KS_ARCH_X86, KS_MODE_32)
 cursor = BASE + 20480
-rows = ['# Observer protocol 1, experimental opt-in; exact original build only']
+rows = ['# Observer protocol 2, host observer + read-only inspection; exact build only']
 addresses = {}
 
 def block(name, source):
@@ -220,10 +220,13 @@ get_selection:
     jne internal_get
     cmp dword ptr [0x613078], 0
     je internal_get
-    test ebx, ebx
-    je internal_get
     cmp eax, 4
     sete byte ptr [ebx+{ROLE}]
+    test ebx, ebx
+    jne peer_selection
+    mov eax, 3
+    jmp done
+peer_selection:
     cmp eax, 4
     je role_get
     cmp eax, 3
@@ -325,6 +328,9 @@ reset = block('reset_room', f'''
     jmp 0x42d5ee
 ''')
 hook(0x42d5e8, 6, reset)
+# Enable only the host's own slot dropdown. Native host authority stays intact;
+# room_ui maps its selections to connected-human state 3, never open/CPU/closed.
+write(0x42d8f6, bytes.fromhex('6a01'))
 
 encode = block('encode_role', f'''
     mov byte ptr [ebx+5], dl
@@ -333,8 +339,6 @@ encode = block('encode_role', f'''
     movzx ecx, byte ptr [ebx+4]
     cmp ecx, 8
     jae done
-    test ecx, ecx
-    je done
     cmp byte ptr [ecx+{ROLE}], 1
     jne done
     cmp dl, 0
@@ -391,8 +395,6 @@ snapshot:
     and edx, 0xbf
     cmp edx, 3
     ja invalid
-    cmp ecx, 0
-    je normal
     cmp edx, 0
     je valid
     cmp edx, 3
@@ -440,8 +442,6 @@ hook(0x42dc25, 5, start_count)
 # that rejects one human versus one computer with a connected spectator.
 # Count actual combatants together; observer-only opposition is still invalid.
 start_admission = block('start_admission', '''
-    cmp dx, 1
-    jl reject
     push eax
     movzx eax, dx
     movzx ecx, si
@@ -656,7 +656,185 @@ normal:
 ''')
 hook(0x441310, 6, depart)
 
+# Read-only inspection. Never impersonate the selected owner in simulation or
+# command globals. Return owner (0..7), or -1 when no eligible selection exists.
+inspect_owner = block('inspect_owner', f'''
+    movzx eax, byte ptr [0x59ee52]
+    call {is_observer}
+    jnc none
+    movzx eax, word ptr [0x611e12]
+    test eax, eax
+    je none
+    cmp eax, 1699
+    ja none
+    imul eax, eax, 292
+    cmp word ptr [eax+0x49e0c0], 0
+    jle none
+    cmp byte ptr [eax+0x49e0be], 1
+    ja none
+    movzx eax, byte ptr [eax+0x49e0bd]
+    cmp eax, 8
+    jae none
+    cmp byte ptr [eax+{ROLE}], 1
+    je none
+    push edx
+    imul edx, eax, 1124
+    movzx edx, byte ptr [edx+0x49b046]
+    cmp edx, 2
+    je valid
+    cmp edx, 3
+    je valid
+    pop edx
+    jmp none
+valid:
+    pop edx
+    ret
+none:
+    mov eax, -1
+    ret
+''')
+
+# Only the four resource/supply display reads receive the inspected owner.
+detail = block('building_detail', f'''
+    pushfd
+    pushad
+    call {inspect_owner}
+    cmp eax, 0
+    jl native
+    popad
+    popfd
+    jmp 0x418a76
+native:
+    popad
+    popfd
+    jne 0x418d65
+    jmp 0x418a76
+''')
+# This is a rendering-only owner comparison. Command eligibility is untouched.
+hook(0x418a70, 6, detail)
+for va in (0x41cfa3, 0x41cfd9, 0x41d00c, 0x41d077):
+    hud = block('resource_owner_'+hex(va), f'''
+        pushfd
+        push eax
+        call {inspect_owner}
+        cmp eax, 0
+        jl native
+        mov ecx, eax
+        jmp done
+    native:
+        movsx ecx, byte ptr [0x59ee52]
+    done:
+        pop eax
+        popfd
+        jmp {va+7}
+    ''')
+    hook(va, 7, hud)
+
+INFO = ROLE+768
+QUEUE = ROLE+832
+IDLE = ROLE+896
+for va,text in ((INFO,'OBS P%d - resources / supply'),
+                (QUEUE,'Q%d: %s x%d (%d%%)'),(IDLE,'Production: -')):
+    rows.append('B %X %s' % (va-BASE, (text+'\0').encode('ascii').hex()))
+inspect_draw = block('inspect_draw', f'''
+    call 0x41cef0
+    pushfd
+    pushad
+    call {inspect_owner}
+    cmp eax, 0
+    jl done
+    mov edi, dword ptr [0x613bd4]
+    test edi, edi
+    je done
+    inc eax
+    push eax
+    push {INFO}
+    push 150
+    push 20
+    push 170
+    push edi
+    call 0x453d20
+    add esp, 24
+    movzx esi, word ptr [0x611e12]
+    imul esi, esi, 292
+    add esi, 0x49e0b8
+    cmp byte ptr [esi+6], 1
+    jne done
+    xor ebx, ebx
+    xor ebp, ebp
+next_queue:
+    movzx eax, byte ptr [esi+ebx*8+0x7c]
+    cmp eax, 1
+    je unit_queue
+    cmp eax, 9
+    jne next
+unit_queue:
+    movzx eax, byte ptr [esi+ebx*8+0x7d]
+    test eax, eax
+    je next
+    movzx ecx, word ptr [esi+ebx*8+0x7a]
+    test ecx, ecx
+    je next
+    cmp ecx, 44
+    ja next
+    push eax
+    imul ecx, ecx, 84
+    add ecx, 0x461330
+    movzx eax, word ptr [esi+ebx*8+0x7e]
+    imul eax, eax, 100
+    movzx edx, word ptr [esi+ebx*8+0x80]
+    test edx, edx
+    je no_progress
+    push ecx
+    mov ecx, edx
+    xor edx, edx
+    div ecx
+    pop ecx
+    cmp eax, 100
+    jbe progress
+    mov eax, 100
+    jmp progress
+no_progress:
+    xor eax, eax
+progress:
+    pop edx
+    push eax
+    push edx
+    push ecx
+    lea eax, [ebx+1]
+    push eax
+    push {QUEUE}
+    push 150
+    mov eax, ebp
+    shl eax, 4
+    add eax, 38
+    push eax
+    push 170
+    push edi
+    call 0x453d20
+    add esp, 36
+    inc ebp
+next:
+    inc ebx
+    cmp ebx, 10
+    jb next_queue
+    test ebp, ebp
+    jne done
+    push {IDLE}
+    push 150
+    push 38
+    push 170
+    push edi
+    call 0x453cc0
+    add esp, 20
+done:
+    popad
+    popfd
+    ret
+''')
+callhook(0x442d16, inspect_draw)
+
 # Application GUID returned by native 430B20. Different app GUID prevents old
 # clients from opening the extended DirectPlay session, before role packets.
-write(0x45f670, uuid.UUID('9ea51f8d-0411-4d2b-bf03-9bc52fb7a201').bytes_le)
+write(0x45f670, uuid.UUID('62046975-3128-4fd1-91b4-240b14bb2190').bytes_le)
 print('\n'.join(rows))

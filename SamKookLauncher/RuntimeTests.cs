@@ -64,6 +64,9 @@ static class RuntimeTests {
    var observer=(byte[])asm.GetType("SamKookFreeNet.ObserverPatch").GetMethod("Apply").Invoke(null,new object[]{rice});
    Check(observer[0x3a210]==0xe9 && rice[0x3a210]==0x53,"Observer receive gate or source preservation failed");
    Check(observer[0x47ad5]==0xe9 && rice[0x47ad5]==0x0f,"Observer empty-army fallback hook missing or source modified");
+   Check(observer[0x2d8f6]==0x6a && observer[0x2d8f7]==1 && rice[0x2d8f7]==0,"Host observer control not enabled or source modified");
+   foreach(int offset in new[]{0x1cfa3,0x1cfd9,0x1d00c,0x1d077,0x18a70})
+    Check(observer[offset]==0xe9 && rice[offset]==0x0f,"Observer inspection hook missing or source modified");
    observer=(byte[])lifecycle.Invoke(null,new object[]{observer});
    if(rally && timer)File.WriteAllBytes(Path.Combine(root,"observer-"+(selection?"36":"12")+".exe"),observer);
   }

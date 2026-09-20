@@ -6,6 +6,20 @@ static class RuntimeTests {
  static int Main(string[] args){
   var root=AppDomain.CurrentDomain.BaseDirectory;
   var asm=Assembly.LoadFrom(Path.Combine(root,"SamKookLauncher.exe"));
+  var network=asm.GetType("SamKookFreeNet.NetworkSetup");
+  foreach(string value in new[]{"", "bad IP", "::1", "26.157.67.215", "127.0.0.1"}) {
+   object[] addressArgs={value,false};string address=(string)network.GetMethod("GameAddress").Invoke(null,addressArgs);
+   bool valid=value=="26.157.67.215" || value=="127.0.0.1";
+   Check((bool)addressArgs[1]==valid && address==(valid?value:"127.0.0.1"),"Offline launch address fallback failed");
+  }
+  var candidates=new[]{System.Net.IPAddress.Parse("26.157.67.215"),System.Net.IPAddress.Parse("192.168.0.3"),System.Net.IPAddress.Parse("26.157.67.215"),System.Net.IPAddress.Parse("25.1.2.3"),System.Net.IPAddress.IPv6Loopback,System.Net.IPAddress.Parse("26.1.2.3")};
+  var filtered=(string[])network.GetMethod("FilterRadminAddresses").Invoke(null,new object[]{candidates});
+  Check(filtered.Length==2 && filtered[0]=="26.1.2.3" && filtered[1]=="26.157.67.215","Radmin filtering/deduplication failed");
+  string prompt=(string)network.GetMethod("ServerPrompt").Invoke(null,new object[]{filtered});
+  Check(prompt.Contains("당신이 서버가 맞나요?") && prompt.Contains(filtered[0]) && prompt.Contains(filtered[1]),"Server confirmation missing addresses");
+  prompt=(string)network.GetMethod("ServerPrompt").Invoke(null,new object[]{new string[0]});
+  Check(prompt.Contains("찾지 못했습니다"),"Missing VPN not explained");
+  Console.WriteLine("PASS offline address fallback, Radmin filtering, multiple/no-address prompts");
   var patch=asm.GetType("SamKookFreeNet.QueuePatch");
   var original=File.ReadAllBytes(args[0]);
   var data=(byte[])patch.GetMethod("ApplyAddress").Invoke(null,new object[]{original,"26.157.67.215"});

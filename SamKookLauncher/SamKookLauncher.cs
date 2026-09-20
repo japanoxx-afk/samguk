@@ -15,8 +15,8 @@ using System.Windows.Forms;
 using System.Reflection;
 
 [assembly: AssemblyTitle("SamKook FreeNet Launcher")]
-[assembly: AssemblyVersion("1.8.0.0")]
-[assembly: AssemblyFileVersion("1.8.0.0")]
+[assembly: AssemblyVersion("1.8.1.0")]
+[assembly: AssemblyFileVersion("1.8.1.0")]
 
 namespace SamKookFreeNet {
   static class Program {
@@ -28,8 +28,39 @@ namespace SamKookFreeNet {
     }
   }
 
+  static class NetworkSetup {
+    public static string GameAddress(string value,out bool valid) {
+      IPAddress address;
+      valid=IPAddress.TryParse((value??"").Trim(),out address) && address.AddressFamily==AddressFamily.InterNetwork;
+      return valid?address.ToString():"127.0.0.1";
+    }
+    public static string[] FilterRadminAddresses(IEnumerable<IPAddress> addresses) {
+      var result=new SortedSet<string>(StringComparer.Ordinal);
+      foreach(var address in addresses)
+        if(address!=null && address.AddressFamily==AddressFamily.InterNetwork && address.GetAddressBytes()[0]==26)result.Add(address.ToString());
+      var values=new string[result.Count];result.CopyTo(values);return values;
+    }
+    public static string[] FindRadminAddresses() {
+      var addresses=new List<IPAddress>();
+      try {
+        foreach(var adapter in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()) {
+          if(adapter.OperationalStatus!=System.Net.NetworkInformation.OperationalStatus.Up)continue;
+          try { foreach(var entry in adapter.GetIPProperties().UnicastAddresses)addresses.Add(entry.Address); }
+          catch(System.Net.NetworkInformation.NetworkInformationException) { }
+        }
+      } catch(System.Net.NetworkInformation.NetworkInformationException) { }
+      return FilterRadminAddresses(addresses);
+    }
+    public static string ServerPrompt(string[] addresses) {
+      return "당신이 서버가 맞나요?\n상대방에게 당신의 라드민 아이피를 알려주세요.\n\n"+
+        (addresses.Length==0?"이 PC에서 26.x.x.x 주소를 찾지 못했습니다.\n라드민 VPN 실행·연결 상태를 확인하세요.":
+        "이 PC의 라드민 IP (활성 26.x.x.x 주소):\n"+string.Join("\n",addresses))+
+        "\n\n상대방은 위 IP를 런처의 '접속 서버 IP'에 입력하세요.\n상대방 PC에서는 서버를 시작할 필요가 없습니다.\n\n이 PC에서 서버를 시작할까요?";
+    }
+  }
+
   sealed class LauncherForm : Form {
-    const string LauncherVersion = "1.8.0";
+    const string LauncherVersion = "1.8.1";
     const string DefaultGame = @"C:\Users\seo\Downloads\DGGL\Games\SamKook_Win\SamKook.exe";
     readonly TextBox gamePath = new TextBox();
     readonly TextBox serverAddress = new TextBox();
@@ -57,7 +88,7 @@ namespace SamKookFreeNet {
 
       var title = new Label { Text = "삼국통일 FreeNet", Font = new Font("맑은 고딕", 20F, FontStyle.Bold), AutoSize = true, Location = new Point(20, 18) };
       var version = new Label { Text = "v" + LauncherVersion, Font = new Font("맑은 고딕", 9F), AutoSize = true, ForeColor = Color.SteelBlue, Location = new Point(275, 35) };
-      var hint = new Label { Text = "함께하기 → 인터넷 플레이 전용 로컬 로비", AutoSize = true, ForeColor = Color.DimGray, Location = new Point(24, 58) };
+      var hint = new Label { Text = "싱글플레이는 서버 없이 실행 / 멀티플레이는 서버 PC에서만 서버 시작", AutoSize = true, ForeColor = Color.DimGray, Location = new Point(24, 58) };
       var pathLabel = new Label { Text = "게임 실행 파일", AutoSize = true, Location = new Point(20, 96) };
       gamePath.Text = LoadPath(); gamePath.Location = new Point(20, 120); gamePath.Width = 585;
       var browse = new Button { Text = "찾기", Location = new Point(615, 117), Size = new Size(80, 31) };
@@ -120,7 +151,12 @@ namespace SamKookFreeNet {
     }
     void ToggleServer(object sender, EventArgs e) {
       try {
-        if (server.IsRunning) server.Stop(); else server.Start();
+        if (server.IsRunning) server.Stop(); else {
+          var addresses=NetworkSetup.FindRadminAddresses();
+          if(MessageBox.Show(this,NetworkSetup.ServerPrompt(addresses),"서버 시작 확인",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return;
+          server.Start();
+          WriteLog(addresses.Length==0?"26.x.x.x 주소를 찾지 못했습니다. 라드민 VPN 연결을 확인하세요.":"상대방에게 알려줄 이 PC의 라드민 IP: "+string.Join(", ",addresses));
+        }
         serverButton.Text = server.IsRunning ? "로컬 서버 중지" : "로컬 서버 시작";
       } catch (Exception ex) { MessageBox.Show(this, ex.Message, "서버 오류"); }
     }
@@ -158,25 +194,25 @@ namespace SamKookFreeNet {
       WriteLog("ICMP "+ip+": 응답 "+ok+"/5"+(ok>0?" / 최소·평균·최대 "+min+" / "+(total/ok)+" / "+max+" ms":" (ICMP 차단일 수도 있음)"));
       WriteLog("측정은 서버 IP까지의 왕복 시간입니다. 실제 대전의 DirectPlay 지연과 동일하지 않습니다. A 자신을 측정하면 비교에 도움이 되지 않습니다.");
     }
-    async void StartGame(object sender, EventArgs e) {
+    void StartGame(object sender, EventArgs e) {
       play.Enabled=false;
       try {
         var source = Path.GetFullPath(gamePath.Text.Trim());
         if (!File.Exists(source)) throw new FileNotFoundException("SamKook.exe를 찾을 수 없습니다.", source);
-        IPAddress targetAddress;
-        var targetText=serverAddress.Text.Trim();
-        if(!IPAddress.TryParse(targetText,out targetAddress) || targetAddress.AddressFamily!=AddressFamily.InterNetwork) throw new ArgumentException("접속 서버 IP에 올바른 IPv4 주소를 입력하세요.");
-        targetText=targetAddress.ToString();
+        bool validServer;
+        var targetText=NetworkSetup.GameAddress(serverAddress.Text,out validServer);
         SavePath();
-        SaveSetting("server-address.txt",targetText);
+        if(validServer)SaveSetting("server-address.txt",targetText);
         SaveSetting("display-mode.txt",displayMode.SelectedIndex.ToString());SaveSetting("wide-screen.txt",wideScreen.Checked?"true":"false");
         SaveSetting("reduce-spin.txt",reduceSpin.Checked?"true":"false");SaveSetting("crash-diagnostic.txt",crashDiagnostic.Checked?"true":"false");
         SaveSetting("low-latency.txt",lowLatency.Checked?"true":"false");
         if(extendedSelection.Checked && MessageBox.Show(this,"36명 선택은 실험 기능입니다. 실제 A·B PC 대전 검증은 아직 완료되지 않았습니다.\n\n모든 참가자가 v1.7.0 이상에서 '유닛 선택 36명'을 켜야 합니다.\n12명 설정 또는 구버전과 함께 플레이하면 동기화가 어긋날 수 있습니다.\n\n초상화는 처음 12명만 표시됩니다. 기존 저장 형식을 유지하므로 저장 후 불러올 때 부대 지정은 처음 12명까지만 복원됩니다.\n원본 SamKook.exe는 수정하지 않으며 체크 해제 후 재실행하면 12명으로 돌아갑니다.\n\n같은 설정을 확인했으며 36명 모드로 실행할까요?","36명 선택 확장",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
         SaveSetting("selection-36.txt",extendedSelection.Checked?"true":"false");
         SaveSetting("right-rally.txt",rightRally.Checked?"true":"false");SaveSetting("game-timer.txt",gameTimer.Checked?"true":"false");
-        if (IPAddress.IsLoopback(targetAddress) && !server.IsRunning) { server.Start(); serverButton.Text = "로컬 서버 중지"; }
-        await CheckConnection();
+        // Single-player must never require a reachable lobby or start a server.
+        // Multiplayer diagnostics remain available through the explicit test button.
+        WriteLog("서버 연결 검사 없이 게임을 실행합니다. 싱글플레이는 서버가 필요하지 않습니다.");
+        if(!validServer)WriteLog("접속 서버 IP가 비어 있거나 잘못되어 이번 실행은 127.0.0.1을 사용합니다. 멀티플레이 전 서버 IP를 입력하세요.");
         var runtime = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "runtime",displayMode.SelectedIndex==0?"original":"display");
         Directory.CreateDirectory(runtime);
         var patched = Path.Combine(runtime, "SamKook.FreeNet.exe");

@@ -31,6 +31,17 @@ static class RuntimeTests {
   Check(data[0x65802]==0 && data[0x65804]==1 && data[0x65806]==2,"Multiplayer buffers not reduced");
   Check(BitConverter.ToInt32(original,0x42f6c)==6 && original[0x65806]==6,"Original multiplayer logic modified");
   File.WriteAllBytes(Path.Combine(root,"performance-test.exe"),data);
+  var lifecycle=asm.GetType("SamKookFreeNet.NetworkLifecyclePatch").GetMethod("Apply");
+  var safeNetwork=(byte[])lifecycle.Invoke(null,new object[]{data});
+  Check(data[0x499fb]==0xff && safeNetwork[0x499fb]==0xe8,"Lifecycle input preservation failed");
+  File.WriteAllBytes(Path.Combine(root,"network-test.exe"),safeNetwork);
+  var badNetwork=(byte[])data.Clone();badNetwork[0x49c7a]^=1;
+  bool invalidNetwork=false;
+  try{lifecycle.Invoke(null,new object[]{badNetwork});}catch(TargetInvocationException ex){invalidNetwork=ex.InnerException is InvalidDataException;}
+  Check(invalidNetwork,"Unknown lifecycle instructions accepted");
+  invalidNetwork=false;
+  try{lifecycle.Invoke(null,new object[]{safeNetwork});}catch(TargetInvocationException ex){invalidNetwork=ex.InnerException is InvalidDataException;}
+  Check(invalidNetwork,"Duplicate lifecycle patch accepted");
   var expanded=(byte[])asm.GetType("SamKookFreeNet.SelectionPatch").GetMethod("Apply").Invoke(null,new object[]{data});
   File.WriteAllBytes(Path.Combine(root,"selection36-test.exe"),expanded);
   Check(BitConverter.ToUInt16(expanded,0x44556)==36,"Drag selection bound not expanded");
@@ -52,6 +63,7 @@ static class RuntimeTests {
    if(rally && timer)File.WriteAllBytes(Path.Combine(root,"rice-"+(selection?"36":"12")+".exe"),rice);
    var observer=(byte[])asm.GetType("SamKookFreeNet.ObserverPatch").GetMethod("Apply").Invoke(null,new object[]{rice});
    Check(observer[0x3a210]==0xe9 && rice[0x3a210]==0x53,"Observer receive gate or source preservation failed");
+   observer=(byte[])lifecycle.Invoke(null,new object[]{observer});
    if(rally && timer)File.WriteAllBytes(Path.Combine(root,"observer-"+(selection?"36":"12")+".exe"),observer);
   }
   changed=(byte[])data.Clone();changed[0x333d6]^=1;rejected=false;

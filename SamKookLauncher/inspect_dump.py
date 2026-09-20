@@ -31,13 +31,17 @@ ctx = unpack('II', off+160)[1]
 eip, esp = unpack('I', ctx+184)[0], unpack('I', ctx+196)[0]
 print(f'thread={thread} exception={code:08x} EIP={eip:08x} {symbol(eip)} ESP={esp:08x}')
 print('exception parameters:', unpack('QQ', off+40))
+for register, delta in [('EDI',156),('ESI',160),('EBX',164),('EDX',168),('ECX',172),('EAX',176),('EBP',180)]:
+    print(f'{register}={unpack("I", ctx+delta)[0]:08x}')
 off = streams[3][1]
 for i in range(unpack('I', off)[0]):
     pos = off+4+48*i
     if unpack('I', pos)[0] != thread:
         continue
     start, size, rva = unpack('QII', pos+24)
-    for addr in range(esp, min(start+size, esp+2048), 4):
+    # DirectPlay's provider initialization can have a >12 KiB stack. A short
+    # scan omitted the game's InitializeConnection caller in the join crash.
+    for addr in range(esp, min(start+size, esp+65536), 4):
         val = unpack('I', rva+addr-start)[0]
         name = symbol(val)
         if name:

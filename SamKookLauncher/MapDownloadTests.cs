@@ -29,6 +29,24 @@ static class MapDownloadTests {
     Task.WaitAll(run(exe,download),run(exe,download));Check(count==2,"Concurrent installs downloaded twice");
     object[] render={dest,0,0};((IDisposable)asm.GetType("SamKookFreeNet.MapPreview").GetMethod("Render").Invoke(null,render)).Dispose();
     Check((int)render[1]==128 && (int)render[2]==128,"New map dimensions incorrect");
+    string hash=(string)maps.GetMethod("Digest").Invoke(null,new object[]{bytes});
+    string row="samhan-glory.skm\t(N4) 삼한의 영광.skm\t"+hash+"\t"+bytes.Length;
+    var catalog=maps.GetMethod("InstallCatalog");int fetched=0;
+    Func<string,int,Task<byte[]>> catalogFetch=(file,size)=>{fetched++;return Task.FromResult(bytes);};
+    Func<string,string> sync=text=>((Task<string>)catalog.Invoke(null,new object[]{exe,text,catalogFetch})).GetAwaiter().GetResult();
+    sync(row);Check(fetched==0,"Catalog downloaded existing map");
+    string added="second.skm\t새 맵.skm\t"+hash+"\t"+bytes.Length;
+    sync(row+"\n"+added);Check(fetched==1 && File.Exists(Path.Combine(root,"Mission","새 맵.skm")),"New catalog map not installed");
+    sync(row+"\n"+added);Check(fetched==1,"Catalog repeat downloaded again");
+    foreach(string invalid in new[]{"../evil.skm\tx.skm\t"+hash+"\t"+bytes.Length,"x.skm\t../x.skm\t"+hash+"\t"+bytes.Length,"x.skm\tCON.skm\t"+hash+"\t"+bytes.Length,row+"\n"+row,row.Replace(hash,"bad"),""}) {
+      rejected=false;try{sync(invalid);}catch(InvalidDataException){rejected=true;}
+      Check(rejected,"Unsafe catalog accepted");
+    }
+    File.WriteAllText(Path.Combine(root,"Mission","새 맵.skm"),"custom map");
+    string third="third.skm\t세 번째 맵.skm\t"+hash+"\t"+bytes.Length;
+    string summary=sync(added+"\n"+third);
+    Check(summary.Contains("보류 1개") && File.Exists(Path.Combine(root,"Mission","세 번째 맵.skm")),"One conflict prevented unrelated downloads");
+    Console.WriteLine("PASS catalog discovery, future map addition without launcher update, repeat checks, unsafe names/duplicates and partial failure isolation");
     Console.WriteLine("PASS map integrity, Mission install, offline repeat, collision protection, corrupt/truncated rejection, missing game, concurrent install and preview");return 0;
   }
 }

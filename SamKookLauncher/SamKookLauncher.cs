@@ -15,8 +15,8 @@ using System.Windows.Forms;
 using System.Reflection;
 
 [assembly: AssemblyTitle("SamKook FreeNet Launcher")]
-[assembly: AssemblyVersion("1.9.0.0")]
-[assembly: AssemblyFileVersion("1.9.0.0")]
+[assembly: AssemblyVersion("1.9.1.0")]
+[assembly: AssemblyFileVersion("1.9.1.0")]
 
 namespace SamKookFreeNet {
   static class Program {
@@ -60,7 +60,7 @@ namespace SamKookFreeNet {
   }
 
   sealed class LauncherForm : Form {
-    const string LauncherVersion = "1.9.0";
+    const string LauncherVersion = "1.9.1";
     const string DefaultGame = @"C:\Users\seo\Downloads\DGGL\Games\SamKook_Win\SamKook.exe";
     readonly TextBox gamePath = new TextBox();
     readonly TextBox serverAddress = new TextBox();
@@ -266,6 +266,7 @@ namespace SamKookFreeNet {
     async Task DownloadMaps(bool notify) {
       mapDownload.Enabled=false;
       try {
+        WriteLog("GitHub 배포 맵 목록 확인 중… 새 맵은 게임의 Mission 폴더에 자동 설치합니다.");
         var result=await MapDownloads.Install(gamePath.Text.Trim());WriteLog(result);
         if(notify)MessageBox.Show(this,result,"맵 다운로드",MessageBoxButtons.OK,MessageBoxIcon.Information);
       } catch(Exception ex) {

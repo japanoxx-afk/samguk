@@ -311,7 +311,13 @@ def emulate(path):
     u.hook_del(h)
     print('PASS full original snapshot handler: connection/name/local slot, observer-player transitions, UI and wire preservation')
 
-    assert image[0x5f670:0x5f680]==uuid.UUID('62046975-3128-4fd1-91b4-240b14bb2190').bytes_le
+    expected_guid=uuid.UUID('62046975-3128-4fd1-91b4-240b14bb2190').bytes_le
+    if image[0x39770]==0xe9:
+        import hashlib
+        selection=struct.unpack_from('<H',image,0x44556)[0]==36
+        profile='sync-safety-1;latency=True;selection36='+str(selection)+';rice=True;observer2=True'
+        expected_guid=hashlib.sha256(profile.encode()).digest()[:16]
+    assert image[0x5f670:0x5f680]==expected_guid
     print('PASS isolated DirectPlay app GUID; component checks:',path)
 
 for path in sys.argv[1:]:emulate(path)

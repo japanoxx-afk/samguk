@@ -35,6 +35,33 @@ static class RuntimeTests {
   var safeNetwork=(byte[])lifecycle.Invoke(null,new object[]{data});
   Check(data[0x499fb]==0xff && safeNetwork[0x499fb]==0xe8,"Lifecycle input preservation failed");
   File.WriteAllBytes(Path.Combine(root,"network-test.exe"),safeNetwork);
+  var sync=asm.GetType("SamKookFreeNet.SyncSafetyPatch");
+  var syncApply=sync.GetMethod("Apply");
+  var profiles=new System.Collections.Generic.HashSet<string>();
+  for(int flags=0;flags<16;flags++) {
+   var guarded=(byte[])syncApply.Invoke(null,new object[]{safeNetwork,Path.Combine(root,"sync-test.bin"),(flags&1)!=0,(flags&2)!=0,(flags&4)!=0,(flags&8)!=0});
+   Check(guarded[0x39770]==0xe9 && safeNetwork[0x39770]==0x83,"Sync protection or input preservation failed");
+   profiles.Add(BitConverter.ToString(guarded,0x5f670,16));
+   if(flags==0)File.WriteAllBytes(Path.Combine(root,"sync-base.exe"),guarded);
+  }
+  Check(profiles.Count==16,"Different simulation settings can connect to the same session");
+  var pathOnly=(byte[])syncApply.Invoke(null,new object[]{safeNetwork,Path.Combine(root,"다른 진단 경로.bin"),false,false,false,false});
+  Check(profiles.Contains(BitConverter.ToString(pathOnly,0x5f670,16)),"Log path incorrectly affects network compatibility");
+  var fixture=new byte[256];
+  Buffer.BlockCopy(BitConverter.GetBytes(0x314e5953),0,fixture,0,4);
+  Buffer.BlockCopy(BitConverter.GetBytes(1),0,fixture,4,4);
+  Buffer.BlockCopy(BitConverter.GetBytes(2),0,fixture,8,4);
+  Buffer.BlockCopy(BitConverter.GetBytes(3000),0,fixture,12,4);
+  string fixturePath=Path.Combine(root,"sync-report-test.bin");File.WriteAllBytes(fixturePath,fixture);
+  string report=(string)sync.GetMethod("ReadReport").Invoke(null,new object[]{fixturePath});
+  Check(report.Contains("frame=3000") && report.Contains("검사값 불일치") && report.Contains("slot=7"),"Sync report decoding failed");
+  File.WriteAllBytes(fixturePath,new byte[12]);bool rejectedReport=false;
+  try{sync.GetMethod("ReadReport").Invoke(null,new object[]{fixturePath});}catch(TargetInvocationException ex){rejectedReport=ex.InnerException is InvalidDataException;}
+  Check(rejectedReport,"Truncated sync report accepted");
+  var badSync=(byte[])safeNetwork.Clone();badSync[0x39770]^=1;bool rejectedSync=false;
+  try{syncApply.Invoke(null,new object[]{badSync,Path.Combine(root,"sync-test.bin"),false,false,false,false});}catch(TargetInvocationException ex){rejectedSync=ex.InnerException is InvalidDataException;}
+  Check(rejectedSync,"Unknown sync instructions accepted");
+  Console.WriteLine("PASS split-session protection and 16 distinct simulation compatibility profiles");
   var badNetwork=(byte[])data.Clone();badNetwork[0x49c7a]^=1;
   bool invalidNetwork=false;
   try{lifecycle.Invoke(null,new object[]{badNetwork});}catch(TargetInvocationException ex){invalidNetwork=ex.InnerException is InvalidDataException;}
@@ -69,6 +96,8 @@ static class RuntimeTests {
     Check(observer[offset]==0xe9 && rice[offset]==0x0f,"Observer inspection hook missing or source modified");
    observer=(byte[])lifecycle.Invoke(null,new object[]{observer});
    if(rally && timer)File.WriteAllBytes(Path.Combine(root,"observer-"+(selection?"36":"12")+".exe"),observer);
+   var guardedObserver=(byte[])syncApply.Invoke(null,new object[]{observer,Path.Combine(root,"sync-test.bin"),true,selection,true,true});
+   if(rally && timer)File.WriteAllBytes(Path.Combine(root,"sync-"+(selection?"36":"12")+".exe"),guardedObserver);
   }
   changed=(byte[])data.Clone();changed[0x333d6]^=1;rejected=false;
   try{quality.Invoke(null,new object[]{changed,true,true});}catch(TargetInvocationException ex){rejected=ex.InnerException is InvalidDataException;}

@@ -1,5 +1,16 @@
 # v1.11.1 split-session investigation
 
+## v1.12.3 transient construction tolerance
+
+Matched A/B schema-4 snapshots at frame 8061 differed in one documented entity:
+Goguryeo worker ID 13 was removed (HP 0, x=88) on A while still alive (HP 55,
+x=89) on B. RNG, resources, production and all other documented entity fields
+matched. The user confirmed no combat; workers were harvesting or constructing.
+To avoid terminating on this one-barrier construction/harvest transition, the
+fingerprint guard now requires three consecutive mismatching barriers. Any fully
+matching barrier resets the streak immediately. Persistent divergence remains a
+fail-stop and snapshot; this is tolerance, not state repair.
+
 ## v1.11.2 crash follow-up
 
 WER dump SamKook.FreeNet.exe.68264.dmp (2026-09-21 01:55:26) has AV execute/read

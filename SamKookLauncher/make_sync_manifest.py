@@ -5,8 +5,8 @@ from keystone import Ks,KS_ARCH_X86,KS_MODE_32
 b=open(sys.argv[1],'rb').read()
 assert hashlib.sha256(b).hexdigest()=='39a11e76f5328a66a4fe8dcb1318ece6362843d8192caa8c7e15f0fc08abdc62'
 p=pefile.PE(data=b);ks=Ks(KS_ARCH_X86,KS_MODE_32)
-BASE=0x630000;RECORD=0x63d000;FLAG=0x63d100;HASH=0x63d108;VALID=0x63d118;SNAP=0x63d120;PATH=0x63d800
-cursor=0x63c400;rows=['# Sync safety 5: mismatch snapshot for exact entity comparison; not automatic resync']
+BASE=0x630000;RECORD=0x63d000;FLAG=0x63d100;HASH=0x63d108;VALID=0x63d118;SNAP=0x63d120;STREAK=0x63d160;PATH=0x63d800
+cursor=0x63c400;rows=['# Sync safety 6: require three consecutive fingerprint mismatches; not automatic resync']
 def block(name,source):
  global cursor
  a=cursor;code=bytes(ks.asm(source,a)[0]);assert a+len(code)<=RECORD
@@ -293,10 +293,14 @@ next_slot:
  inc ecx
  cmp ecx, 8
  jb slot
+ mov dword ptr [{STREAK}], 0
  popad
  popfd
  ret
 mismatch:
+ inc dword ptr [{STREAK}]
+ cmp dword ptr [{STREAK}], 3
+ jb transient
  mov eax, dword ptr [{HASH}+edi*4]
  mov dword ptr [{RECORD+40}], eax
  mov dword ptr [{RECORD+48}], ebx
@@ -305,6 +309,7 @@ mismatch:
  mov edx, ecx
  mov eax, 5
  call {fail}
+transient:
  popad
  popfd
  ret
@@ -443,6 +448,7 @@ native:
 hook(0x439ea4,5,wait)
 reset=block('new_match',f'''
  mov dword ptr [{FLAG}], 0
+ mov dword ptr [{STREAK}], 0
  call 0x442060
  ret
 ''')

@@ -136,8 +136,8 @@ for path in sys.argv[2:]:
  checksum=0
  for value in wire:checksum^=value
  assert checksum==0
- # Equal barrier fingerprints continue; a differing peer fingerprint fails
- # before the command batch is executed and records both values.
+ # Equal fingerprints continue. One-frame construction/harvest transitions are
+ # tolerated; only three consecutive differing barriers fail-stop.
  for mismatch in (False,True):
   g=Game(path)
   for slot in (0,1):
@@ -150,6 +150,13 @@ for path in sys.argv[2:]:
    g.u.mem_write(ptr,payload+bytes([trailer]));g.w16(0x498724+slot*1168,1)
   g.run(R['compare_hash'])
   if mismatch:
+   assert g.get(FLAG)==0 and not g.logs
+   # A matching barrier clears the grace counter.
+   peer=g.get(0x4989a8+1168);g.u.mem_write(peer+17,struct.pack('<I',0x33333333))
+   g.run(R['compare_hash']);assert g.get(FLAG)==0 and not g.logs
+   g.u.mem_write(peer+17,struct.pack('<I',0x33333334))
+   g.run(R['compare_hash']);g.run(R['compare_hash']);assert g.get(FLAG)==0 and not g.logs
+   g.run(R['compare_hash'])
    assert g.get(FLAG)==1 and struct.unpack_from('<I',g.logs[0],8)[0]==5
    assert struct.unpack_from('<I',g.logs[0],40)[0]==0x33333333
    assert struct.unpack_from('<I',g.logs[0],48)[0]==0x33333334

@@ -1,14 +1,12 @@
-"""Exact-build fail-stop guard for native unilateral split-session paths.
-Does not claim to repair divergence or add state checksum exchange.
-"""
+"""Exact-build fail-stop guard and deterministic barrier fingerprint exchange."""
 import sys,struct,hashlib
 import pefile
 from keystone import Ks,KS_ARCH_X86,KS_MODE_32
 b=open(sys.argv[1],'rb').read()
 assert hashlib.sha256(b).hexdigest()=='39a11e76f5328a66a4fe8dcb1318ece6362843d8192caa8c7e15f0fc08abdc62'
 p=pefile.PE(data=b);ks=Ks(KS_ARCH_X86,KS_MODE_32)
-BASE=0x630000;RECORD=0x63d000;FLAG=0x63d100;PATH=0x63d800
-cursor=0x63c400;rows=['# Sync safety 1: no silent unilateral eviction; not automatic resync']
+BASE=0x630000;RECORD=0x63d000;FLAG=0x63d100;HASH=0x63d108;VALID=0x63d114;PATH=0x63d800
+cursor=0x63c400;rows=['# Sync safety 3: fail-stop on deterministic barrier fingerprint mismatch; not automatic resync']
 def block(name,source):
  global cursor
  a=cursor;code=bytes(ks.asm(source,a)[0]);assert a+len(code)<=RECORD
@@ -30,7 +28,7 @@ fail=block('stop_and_record',f'''
  jne done
  mov dword ptr [{FLAG}], 1
  mov dword ptr [{RECORD}], 0x314e5953
- mov dword ptr [{RECORD+4}], 1
+ mov dword ptr [{RECORD+4}], 2
  mov dword ptr [{RECORD+8}], eax
  mov dword ptr [{RECORD+20}], edx
  mov eax, [0x5173d0]
@@ -106,6 +104,179 @@ done:
  popfd
  ret
 ''')
+
+# Fingerprint deterministic simulation state while excluding UI/renderer
+# globals and pointers. It is cheap enough to run at each lockstep barrier.
+state_hash=block('state_hash',f'''
+ push ebx
+ push ecx
+ push edx
+ push esi
+ push edi
+ mov edi, 0x811c9dc5
+ xor edi, dword ptr [0x6124e0]
+ rol edi, 5
+ xor edi, dword ptr [0x6124e8]
+ xor ecx, ecx
+players:
+ imul esi, ecx, 1124
+ xor edi, dword ptr [esi+0x49b046]
+ rol edi, 5
+ xor edi, dword ptr [esi+0x49b054]
+ rol edi, 5
+ xor edi, dword ptr [esi+0x49b058]
+ rol edi, 5
+ xor edi, dword ptr [esi+0x49b05c]
+ rol edi, 5
+ xor edi, dword ptr [esi+0x49b060]
+ rol edi, 5
+ inc ecx
+ cmp ecx, 8
+ jb players
+ mov ecx, 1699
+ mov esi, 0x49e1dc
+units:
+ xor edi, dword ptr [esi+2]
+ rol edi, 5
+ xor edi, dword ptr [esi+6]
+ rol edi, 5
+ xor edi, dword ptr [esi+10]
+ rol edi, 5
+ xor edi, dword ptr [esi+14]
+ rol edi, 5
+ xor edi, dword ptr [esi+18]
+ rol edi, 5
+ xor edi, dword ptr [esi+22]
+ rol edi, 5
+ cmp byte ptr [esi+6], 1
+ jne next_unit
+ push ecx
+ mov edx, 10
+ lea ebx, [esi+0x7a]
+queue:
+ xor edi, dword ptr [ebx]
+ rol edi, 5
+ add ebx, 8
+ dec edx
+ jne queue
+ pop ecx
+next_unit:
+ add esi, 292
+ dec ecx
+ jne units
+ mov eax, edi
+ pop edi
+ pop esi
+ pop edx
+ pop ecx
+ pop ebx
+ ret
+''')
+
+# Grow the normal 8000 barrier from 10 to 14 bytes by appending the state
+# fingerprint before its XOR trailer. Native packet framing already uses the
+# embedded length and the barrier handler ignores payload beyond the header.
+barrier_hash=block('barrier_hash',f'''
+ pop ebx
+ xor cl, 10
+ mov byte ptr [edi+8], 14
+ xor cl, 14
+ push ecx
+ push edx
+ call {state_hash}
+ mov dword ptr [{HASH}], eax
+ pop edx
+ pop ecx
+ mov dword ptr [edi+9], eax
+ xor cl, al
+ shr eax, 8
+ xor cl, al
+ shr eax, 8
+ xor cl, al
+ shr eax, 8
+ xor cl, al
+ mov byte ptr [edi+13], cl
+ jmp 0x438be5
+''')
+hook(0x438bdc,9,barrier_hash)
+
+# Once every connected human has supplied a barrier, find that barrier in
+# each command ring and compare fingerprints before executing the batch.
+compare_hash=block('compare_hash',f'''
+ pushfd
+ pushad
+ mov dword ptr [{VALID}], 0
+ xor ecx, ecx
+slot:
+ imul eax, ecx, 1124
+ cmp byte ptr [eax+0x49b046], 3
+ jne next_slot
+ imul eax, ecx, 1168
+ movzx edx, word ptr [eax+0x498722]
+ movzx ebp, word ptr [eax+0x498724]
+scan:
+ cmp dx, bp
+ je bad_packet
+ movzx ebx, dx
+ mov esi, dword ptr [eax+ebx*4+0x4989a8]
+ mov ebx, dword ptr [esi]
+ and ebx, 0xff00
+ cmp ebx, 0x8000
+ je found
+ inc dx
+ and edx, 0x7f
+ jmp scan
+found:
+ cmp byte ptr [esi+8], 14
+ jne bad_packet
+ mov ebx, dword ptr [esi+9]
+ cmp dword ptr [{VALID}], 0
+ jne compare
+ mov dword ptr [{RECORD+40}], ebx
+ mov dword ptr [{VALID}], 1
+ jmp next_slot
+compare:
+ cmp ebx, dword ptr [{RECORD+40}]
+ jne mismatch
+next_slot:
+ inc ecx
+ cmp ecx, 8
+ jb slot
+ popad
+ popfd
+ ret
+mismatch:
+ mov dword ptr [{RECORD+48}], ebx
+ mov edx, ecx
+ mov eax, 5
+ call {fail}
+ popad
+ popfd
+ ret
+bad_packet:
+ mov edx, ecx
+ mov eax, 6
+ call {fail}
+ popad
+ popfd
+ ret
+''')
+
+barrier_ready=block('barrier_ready',f'''
+ call {compare_hash}
+ cmp dword ptr [{FLAG}], 0
+ jne stopped
+ cmp word ptr [0x477fa8], di
+ jmp 0x43a052
+stopped:
+ pop edi
+ pop esi
+ pop ebp
+ pop ebx
+ xor eax, eax
+ ret
+''')
+hook(0x43a04b,7,barrier_ready)
 
 timeout=block('timeout_drop',f'''
  cmp dword ptr [0x5173e4], 0

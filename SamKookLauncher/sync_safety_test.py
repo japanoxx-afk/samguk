@@ -80,7 +80,7 @@ for path in sys.argv[2:]:
    assert g.players()==before and not g.departed and not g.sent
    assert len(g.logs)==(0 if failure else 1)
    if not failure:
-    r=g.logs[0];assert struct.unpack_from('<4I',r)==(0x314e5953,1,1,3000)
+    r=g.logs[0];assert struct.unpack_from('<4I',r)==(0x314e5953,2,1,3000)
     assert struct.unpack_from('<I',r,16)[0]==local
     assert struct.unpack_from('<4I',r,24)==(12345,678,3,1<<local)
    g.run(0x439770);assert len(g.logs)==(0 if failure else 1)
@@ -120,4 +120,32 @@ for path in sys.argv[2:]:
  assert g.get(FLAG)==0 and g.departed==[1]
  # No mismatch: all connected players' checks match, disconnected stale checks ignored.
  g=Game(path);g.w8(0x498720+2*1168,255);g.run(0x443710);assert not g.logs
+ # State fingerprint is deterministic, changes with simulation state, and is
+ # appended to the native barrier with a valid XOR trailer.
+ g=Game(path);g.run(R['state_hash']);h=g.u.reg_read(UC_X86_REG_EAX)
+ g2=Game(path);g2.run(R['state_hash']);assert g2.u.reg_read(UC_X86_REG_EAX)==h
+ g2.w32(0x49b054,g2.get(0x49b054)+1);g2.run(R['state_hash'])
+ assert g2.u.reg_read(UC_X86_REG_EAX)!=h
+ g=Game(path);g.w32(0x5173e4,0);g.run(0x438a90)
+ packet=g.get(0x4989a8);wire=bytes(g.u.mem_read(packet,14))
+ assert wire[8]==14 and struct.unpack_from('<I',wire,9)[0]!=0
+ checksum=0
+ for value in wire:checksum^=value
+ assert checksum==0
+ # Equal barrier fingerprints continue; a differing peer fingerprint fails
+ # before the command batch is executed and records both values.
+ for mismatch in (False,True):
+  g=Game(path)
+  for slot in (0,1):
+   ptr=g.get(0x4989a8+slot*1168)
+   payload=struct.pack('<II',0x8000+slot,0)+bytes([14])+struct.pack('<I',0x12345678+(1 if mismatch and slot==1 else 0))
+   trailer=0
+   for value in payload:trailer^=value
+   g.u.mem_write(ptr,payload+bytes([trailer]));g.w16(0x498724+slot*1168,1)
+  g.run(R['compare_hash'])
+  if mismatch:
+   assert g.get(FLAG)==1 and struct.unpack_from('<I',g.logs[0],8)[0]==5
+   assert struct.unpack_from('<I',g.logs[0],40)[0]==0x12345678
+   assert struct.unpack_from('<I',g.logs[0],48)[0]==0x12345679
+  else:assert g.get(FLAG)==0 and not g.logs
  print('PASS protected host/peer paths: timeout, native mismatch, remote eviction, once-only diagnostics, logging failure, wait unwind, ordinary/offline paths',path)

@@ -22,7 +22,19 @@ Unit dispatcher 406336 now checks index <64. Out-of-range values use fail-stop
 reason 4, storing unit/action/kind/type in record offsets 48..60, then unwind
 the dispatcher. It does not silently change the unit or erase invalid state.
 The main loop handles exit; other units may finish that same simulation tick.
-Compatibility profile is sync-safety-2 to isolate this rule change.
+Compatibility profile v1.11.2 was sync-safety-2 to isolate this rule change.
+
+## v1.12.0 deterministic barrier fingerprint
+
+The previous guards did not detect a match that remained connected while the
+two simulations silently diverged. Every native 8000 lockstep barrier now
+appends a deterministic 32-bit fingerprint before the XOR trailer. It covers
+the simulation RNG seed/call count, player states/resources, core unit/building
+records and building production queues. UI, renderer state and pointers are
+excluded. After all human barriers arrive, fingerprints are compared before
+the batch is executed. A mismatch fail-stops with reason 5 and records both
+hashes plus the peer slot. This is detection and evidence preservation, not
+automatic state repair. The compatibility profile is sync-safety-3.
 
 unit_dispatch_test.py reproduces original invalid target assignment and exact
 call, covers bad IDs/owner/queue/type, valid building equivalence, all 256

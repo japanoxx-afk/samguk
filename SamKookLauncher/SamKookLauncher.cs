@@ -15,8 +15,8 @@ using System.Windows.Forms;
 using System.Reflection;
 
 [assembly: AssemblyTitle("SamKook FreeNet Launcher")]
-[assembly: AssemblyVersion("1.11.2.0")]
-[assembly: AssemblyFileVersion("1.11.2.0")]
+[assembly: AssemblyVersion("1.12.0.0")]
+[assembly: AssemblyFileVersion("1.12.0.0")]
 
 namespace SamKookFreeNet {
   static class Program {
@@ -60,7 +60,7 @@ namespace SamKookFreeNet {
   }
 
   sealed class LauncherForm : Form {
-    const string LauncherVersion = "1.11.2";
+    const string LauncherVersion = "1.12.0";
     const string DefaultGame = @"C:\Users\seo\Downloads\DGGL\Games\SamKook_Win\SamKook.exe";
     readonly TextBox gamePath = new TextBox();
     readonly TextBox serverAddress = new TextBox();
@@ -218,7 +218,7 @@ namespace SamKookFreeNet {
         SaveSetting("selection-36.txt",extendedSelection.Checked?"true":"false");
         SaveSetting("right-rally.txt",rightRally.Checked?"true":"false");SaveSetting("game-timer.txt",gameTimer.Checked?"true":"false");
         SaveSetting("rice-rally.txt",riceRally.Checked?"true":"false");
-        if(observerMode.Checked && MessageBox.Show(this,"관전 기능은 시험 기능입니다. 새 기능의 실제 멀티 검증이 필요합니다.\n\n플레이어와 관전자 모두 v1.11.2에서 '관전자 슬롯'을 켜세요.\n방장도 자신의 슬롯을 '관전자'로 바꿀 수 있습니다.\n관전자 외 사람·컴퓨터 플레이어가 합계 2명 이상 필요합니다.\n관전 중 유닛·건물을 클릭하면 해당 플레이어 자원과 건물의 유닛 생산 정보를 읽기 전용으로 표시합니다.\n관전자는 양쪽 시야를 받으며 유닛 생성·게임 조작·승패 판정에서 제외됩니다.\n일반 대전맵의 새 게임만 테스트하세요. 저장 게임·시나리오·방장 교체는 지원하지 않습니다. 방장은 대전 중 접속을 유지하세요.\n\n관전 모드를 끈 PC 또는 구버전과는 대전에 함께 입장할 수 없습니다.\n관전자 퇴장·시야·동기화는 실제 3대 PC에서 추가 확인이 필요합니다.\n원본 실행 파일은 보존되며 체크 해제 후 재실행하면 기존 방식으로 돌아갑니다.\n\n시험 모드로 실행할까요?","관전자 슬롯 시험 기능",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
+        if(observerMode.Checked && MessageBox.Show(this,"관전 기능은 시험 기능입니다. 새 기능의 실제 멀티 검증이 필요합니다.\n\n플레이어와 관전자 모두 v1.12.0에서 '관전자 슬롯'을 켜세요.\n방장도 자신의 슬롯을 '관전자'로 바꿀 수 있습니다.\n관전자 외 사람·컴퓨터 플레이어가 합계 2명 이상 필요합니다.\n관전 중 유닛·건물을 클릭하면 해당 플레이어 자원과 건물의 유닛 생산 정보를 읽기 전용으로 표시합니다.\n관전자는 양쪽 시야를 받으며 유닛 생성·게임 조작·승패 판정에서 제외됩니다.\n일반 대전맵의 새 게임만 테스트하세요. 저장 게임·시나리오·방장 교체는 지원하지 않습니다. 방장은 대전 중 접속을 유지하세요.\n\n관전 모드를 끈 PC 또는 구버전과는 대전에 함께 입장할 수 없습니다.\n관전자 퇴장·시야·동기화는 실제 3대 PC에서 추가 확인이 필요합니다.\n원본 실행 파일은 보존되며 체크 해제 후 재실행하면 기존 방식으로 돌아갑니다.\n\n시험 모드로 실행할까요?","관전자 슬롯 시험 기능",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
         SaveSetting("observer-mode.txt",observerMode.Checked?"true":"false");
         // Single-player must never require a reachable lobby or start a server.
         // Multiplayer diagnostics remain available through the explicit test button.
@@ -240,6 +240,7 @@ namespace SamKookFreeNet {
         var syncLog=Path.Combine(syncFolder,"sync-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+"-"+Guid.NewGuid().ToString("N")+".bin");
         data=SyncSafetyPatch.Apply(data,syncLog,lowLatency.Checked,extendedSelection.Checked,riceRally.Checked,observerMode.Checked);
         WriteLog("분리 진행 보호: 활성 / 자동 재동기화 아님 / "+SyncSafetyPatch.Profile(lowLatency.Checked,extendedSelection.Checked,riceRally.Checked,observerMode.Checked));
+        WriteLog("멀티 상태 지문: 매 동기화 장벽에서 RNG·자원·유닛/건물 상태 비교 / 불일치 시 안전 중단 및 기록");
         WriteLog("동기화 진단 파일 (보호 작동 시 생성): "+syncLog);
         WriteLog("통신 안정화 패치: DirectPlay 객체 중복 해제 차단 / COM 초기화·종료 균형 보호");
         File.WriteAllBytes(patched,data);
@@ -252,7 +253,7 @@ namespace SamKookFreeNet {
         WriteLog("유닛 선택 한도: "+(extendedSelection.Checked?"36명 (실험 / 전원 동일 설정 필요 / 초상화 12칸)":"12명 (원본)")+" / 원본 실행 파일 보존");
         WriteLog("우클릭 집결: "+rightRally.Checked+" (집결 버튼이 활성화된 내 건물 / 지형 우클릭) / 게임 타이머: "+gameTimer.Checked+" (게임 진행 시간)");
         WriteLog("쌀 집결 자동 채집: "+riceRally.Checked+" / 멀티는 전원 v1.9.0 이상에서 같은 설정을 사용하세요.");
-        WriteLog("관전자 슬롯: "+observerMode.Checked+" / 시험 프로토콜 2 / 전원 v1.11.2·동일 설정 / 방장 관전·선택 대상 자원/생산 읽기 전용");
+        WriteLog("관전자 슬롯: "+observerMode.Checked+" / 시험 프로토콜 2 / 전원 v1.12.0·동일 설정 / 방장 관전·선택 대상 자원/생산 읽기 전용");
         var monitor=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"GameMonitor.exe");
         if(!File.Exists(monitor)) throw new FileNotFoundException("충돌 진단 도우미가 없습니다. GameMonitor.exe를 런처와 같은 폴더에 두세요.");
         var crashFolder=Path.Combine(runtime,"crashes");

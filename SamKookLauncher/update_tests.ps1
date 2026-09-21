@@ -1,7 +1,7 @@
 param([Parameter(Mandatory=$true)][string]$BuildDirectory)
 $ErrorActionPreference='Stop'
 $src=$PSScriptRoot
-$root=Join-Path $src ('runtime\update tests 한글 '+[guid]::NewGuid())
+$root=Join-Path $src ('runtime\update tests 한글 '+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $root | Out-Null
 $csc='C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe'
 & $csc /nologo /target:winexe /out:"$root\new.exe" "$src\UpdateProbe.cs"

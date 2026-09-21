@@ -36,6 +36,19 @@ the batch is executed. A mismatch fail-stops with reason 5 and records both
 hashes plus the peer slot. This is detection and evidence preservation, not
 automatic state repair. The compatibility profile is sync-safety-3.
 
+## v1.12.1 sectional fingerprint follow-up
+
+B PC produced a reason-5 record at frame 12027 with both humans connected and
+ready, proving that v1.12.0 received different fingerprints at the same native
+barrier. The aggregate did not identify which field group differed and included
+entity words whose exact simulation meaning was not established. Fingerprints
+are now split into RNG, player state/resources, documented entity core fields,
+and building production queues. Unknown entity words are excluded. A schema-3
+record stores the first differing section, both slots and both hashes. The
+launcher polls the per-launch report while the process remains alive, so a
+fail-stop that returns to the lobby is explained immediately. Compatibility
+profile sync-safety-4 prevents mixed sessions.
+
 unit_dispatch_test.py reproduces original invalid target assignment and exact
 call, covers bad IDs/owner/queue/type, valid building equivalence, all 256
 action indices on base/observer12/observer36 images, and AI non-building guard.

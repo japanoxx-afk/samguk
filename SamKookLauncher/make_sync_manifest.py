@@ -5,8 +5,8 @@ from keystone import Ks,KS_ARCH_X86,KS_MODE_32
 b=open(sys.argv[1],'rb').read()
 assert hashlib.sha256(b).hexdigest()=='39a11e76f5328a66a4fe8dcb1318ece6362843d8192caa8c7e15f0fc08abdc62'
 p=pefile.PE(data=b);ks=Ks(KS_ARCH_X86,KS_MODE_32)
-BASE=0x630000;RECORD=0x63d000;FLAG=0x63d100;HASH=0x63d108;VALID=0x63d114;PATH=0x63d800
-cursor=0x63c400;rows=['# Sync safety 3: fail-stop on deterministic barrier fingerprint mismatch; not automatic resync']
+BASE=0x630000;RECORD=0x63d000;FLAG=0x63d100;HASH=0x63d108;VALID=0x63d118;PATH=0x63d800
+cursor=0x63c400;rows=['# Sync safety 4: sectional deterministic barrier fingerprints; not automatic resync']
 def block(name,source):
  global cursor
  a=cursor;code=bytes(ks.asm(source,a)[0]);assert a+len(code)<=RECORD
@@ -28,7 +28,7 @@ fail=block('stop_and_record',f'''
  jne done
  mov dword ptr [{FLAG}], 1
  mov dword ptr [{RECORD}], 0x314e5953
- mov dword ptr [{RECORD+4}], 2
+ mov dword ptr [{RECORD+4}], 3
  mov dword ptr [{RECORD+8}], eax
  mov dword ptr [{RECORD+20}], edx
  mov eax, [0x5173d0]
@@ -105,22 +105,28 @@ done:
  ret
 ''')
 
-# Fingerprint deterministic simulation state while excluding UI/renderer
-# globals and pointers. It is cheap enough to run at each lockstep barrier.
+# Four fingerprints isolate RNG, resources, entity core fields and production.
+# Only fields whose simulation meaning is known are included; v1.12.0's broad
+# entity words could include client-local data and are intentionally removed.
 state_hash=block('state_hash',f'''
+ push eax
  push ebx
  push ecx
  push edx
  push esi
  push edi
+ push ebp
+ mov eax, 0x811c9dc5
+ xor eax, dword ptr [0x6124e0]
+ rol eax, 5
+ xor eax, dword ptr [0x6124e8]
+ mov dword ptr [{HASH}], eax
  mov edi, 0x811c9dc5
- xor edi, dword ptr [0x6124e0]
- rol edi, 5
- xor edi, dword ptr [0x6124e8]
  xor ecx, ecx
 players:
  imul esi, ecx, 1124
- xor edi, dword ptr [esi+0x49b046]
+ movzx eax, byte ptr [esi+0x49b046]
+ xor edi, eax
  rol edi, 5
  xor edi, dword ptr [esi+0x49b054]
  rol edi, 5
@@ -133,30 +139,38 @@ players:
  inc ecx
  cmp ecx, 8
  jb players
+ mov dword ptr [{HASH+4}], edi
+ mov ebp, 0x811c9dc5
+ mov ebx, 0x811c9dc5
  mov ecx, 1699
  mov esi, 0x49e1dc
 units:
- xor edi, dword ptr [esi+2]
- rol edi, 5
- xor edi, dword ptr [esi+6]
- rol edi, 5
- xor edi, dword ptr [esi+10]
- rol edi, 5
- xor edi, dword ptr [esi+14]
- rol edi, 5
- xor edi, dword ptr [esi+18]
- rol edi, 5
- xor edi, dword ptr [esi+22]
- rol edi, 5
+ movzx eax, word ptr [esi+2]
+ xor ebp, eax
+ rol ebp, 5
+ movzx eax, word ptr [esi+4]
+ xor ebp, eax
+ rol ebp, 5
+ movzx eax, byte ptr [esi+6]
+ xor ebp, eax
+ rol ebp, 5
+ movzx eax, word ptr [esi+8]
+ xor ebp, eax
+ rol ebp, 5
+ movzx eax, word ptr [esi+12]
+ xor ebp, eax
+ rol ebp, 5
  cmp byte ptr [esi+6], 1
  jne next_unit
  push ecx
  mov edx, 10
- lea ebx, [esi+0x7a]
+ lea edi, [esi+0x7a]
 queue:
- xor edi, dword ptr [ebx]
- rol edi, 5
- add ebx, 8
+ xor ebx, dword ptr [edi]
+ rol ebx, 5
+ xor ebx, dword ptr [edi+4]
+ rol ebx, 5
+ add edi, 8
  dec edx
  jne queue
  pop ecx
@@ -164,38 +178,43 @@ next_unit:
  add esi, 292
  dec ecx
  jne units
- mov eax, edi
+ mov dword ptr [{HASH+8}], ebp
+ mov dword ptr [{HASH+12}], ebx
+ pop ebp
  pop edi
  pop esi
  pop edx
  pop ecx
  pop ebx
+ pop eax
  ret
 ''')
 
-# Grow the normal 8000 barrier from 10 to 14 bytes by appending the state
-# fingerprint before its XOR trailer. Native packet framing already uses the
-# embedded length and the barrier handler ignores payload beyond the header.
+# Grow the normal barrier from 10 to 26 bytes with four sectional hashes.
 barrier_hash=block('barrier_hash',f'''
  pop ebx
  xor cl, 10
- mov byte ptr [edi+8], 14
- xor cl, 14
+ mov byte ptr [edi+8], 26
+ xor cl, 26
  push ecx
  push edx
  call {state_hash}
- mov dword ptr [{HASH}], eax
  pop edx
  pop ecx
- mov dword ptr [edi+9], eax
- xor cl, al
- shr eax, 8
- xor cl, al
- shr eax, 8
- xor cl, al
- shr eax, 8
- xor cl, al
- mov byte ptr [edi+13], cl
+ push esi
+ push edx
+ mov esi, {HASH}
+ xor eax, eax
+copy_hash:
+ mov dl, byte ptr [esi+eax]
+ mov byte ptr [edi+eax+9], dl
+ xor cl, dl
+ inc eax
+ cmp eax, 16
+ jb copy_hash
+ pop edx
+ pop esi
+ mov byte ptr [edi+25], cl
  jmp 0x438be5
 ''')
 hook(0x438bdc,9,barrier_hash)
@@ -227,17 +246,30 @@ scan:
  and edx, 0x7f
  jmp scan
 found:
- cmp byte ptr [esi+8], 14
+ cmp byte ptr [esi+8], 26
  jne bad_packet
- mov ebx, dword ptr [esi+9]
  cmp dword ptr [{VALID}], 0
  jne compare
- mov dword ptr [{RECORD+40}], ebx
+ mov eax, dword ptr [esi+9]
+ mov dword ptr [{HASH}], eax
+ mov eax, dword ptr [esi+13]
+ mov dword ptr [{HASH+4}], eax
+ mov eax, dword ptr [esi+17]
+ mov dword ptr [{HASH+8}], eax
+ mov eax, dword ptr [esi+21]
+ mov dword ptr [{HASH+12}], eax
+ mov dword ptr [{RECORD+52}], ecx
  mov dword ptr [{VALID}], 1
  jmp next_slot
 compare:
- cmp ebx, dword ptr [{RECORD+40}]
+ xor edi, edi
+compare_section:
+ mov ebx, dword ptr [esi+edi*4+9]
+ cmp ebx, dword ptr [{HASH}+edi*4]
  jne mismatch
+ inc edi
+ cmp edi, 4
+ jb compare_section
 next_slot:
  inc ecx
  cmp ecx, 8
@@ -246,7 +278,11 @@ next_slot:
  popfd
  ret
 mismatch:
+ mov eax, dword ptr [{HASH}+edi*4]
+ mov dword ptr [{RECORD+40}], eax
  mov dword ptr [{RECORD+48}], ebx
+ mov dword ptr [{RECORD+56}], ecx
+ mov dword ptr [{RECORD+60}], edi
  mov edx, ecx
  mov eax, 5
  call {fail}

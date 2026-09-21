@@ -5,8 +5,8 @@ from keystone import Ks,KS_ARCH_X86,KS_MODE_32
 b=open(sys.argv[1],'rb').read()
 assert hashlib.sha256(b).hexdigest()=='39a11e76f5328a66a4fe8dcb1318ece6362843d8192caa8c7e15f0fc08abdc62'
 p=pefile.PE(data=b);ks=Ks(KS_ARCH_X86,KS_MODE_32)
-BASE=0x630000;RECORD=0x63d000;FLAG=0x63d100;HASH=0x63d108;VALID=0x63d118;PATH=0x63d800
-cursor=0x63c400;rows=['# Sync safety 4: sectional deterministic barrier fingerprints; not automatic resync']
+BASE=0x630000;RECORD=0x63d000;FLAG=0x63d100;HASH=0x63d108;VALID=0x63d118;SNAP=0x63d120;PATH=0x63d800
+cursor=0x63c400;rows=['# Sync safety 5: mismatch snapshot for exact entity comparison; not automatic resync']
 def block(name,source):
  global cursor
  a=cursor;code=bytes(ks.asm(source,a)[0]);assert a+len(code)<=RECORD
@@ -28,7 +28,7 @@ fail=block('stop_and_record',f'''
  jne done
  mov dword ptr [{FLAG}], 1
  mov dword ptr [{RECORD}], 0x314e5953
- mov dword ptr [{RECORD+4}], 3
+ mov dword ptr [{RECORD+4}], 4
  mov dword ptr [{RECORD+8}], eax
  mov dword ptr [{RECORD+20}], edx
  mov eax, [0x5173d0]
@@ -51,8 +51,11 @@ capture:
  imul esi, ebx, 1124
  movzx eax, byte ptr [esi+0x49b046]
  stosd
+ movzx eax, byte ptr [esi+0x49b028]
+ shl eax, 8
  imul esi, ebx, 1168
- movzx eax, byte ptr [esi+0x498720]
+ movzx edx, byte ptr [esi+0x498720]
+ or eax, edx
  stosd
  mov eax, [esi+0x49871c]
  stosd
@@ -93,6 +96,22 @@ capture:
  push {FLAG+4}
  push 256
  push {RECORD}
+ push ebx
+ call dword ptr [0x45f0ec]
+ mov dword ptr [{SNAP}], 0x31504e53
+ mov dword ptr [{SNAP+4}], 1700
+ mov dword ptr [{SNAP+8}], 292
+ mov dword ptr [{SNAP+12}], 0x49e0b8
+ push 0
+ push {FLAG+4}
+ push 16
+ push {SNAP}
+ push ebx
+ call dword ptr [0x45f0ec]
+ push 0
+ push {FLAG+4}
+ push 496400
+ push 0x49e0b8
  push ebx
  call dword ptr [0x45f0ec]
  push ebx

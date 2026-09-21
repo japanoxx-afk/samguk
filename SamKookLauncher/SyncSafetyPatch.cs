@@ -10,7 +10,7 @@ namespace SamKookFreeNet {
  // lockstep barrier only; compatibility GUIDs prevent mixed-version sessions.
  static class SyncSafetyPatch {
   public static string Profile(bool latency,bool selection,bool rice,bool observer) {
-   return "sync-safety-4;latency="+latency+";selection36="+selection+";rice="+rice+";observer2="+observer;
+   return "sync-safety-5;latency="+latency+";selection36="+selection+";rice="+rice+";observer2="+observer;
   }
   public static byte[] Apply(byte[] input,string logPath,bool latency,bool selection,bool rice,bool observer) {
    int pe=BitConverter.ToInt32(input,0x3c),opt=pe+24;
@@ -54,10 +54,12 @@ namespace SamKookFreeNet {
   public static string ReadReport(string path) {
    if(!File.Exists(path))return null;
    var b=File.ReadAllBytes(path);
-   if(b.Length<256 || b.Length%256!=0)throw new InvalidDataException("동기화 기록이 불완전합니다: "+path);
-   int o=b.Length-256;
+   if(b.Length<256)throw new InvalidDataException("동기화 기록이 불완전합니다: "+path);
+   const int snapshotChunk=256+16+1700*292;
+   int o=(b.Length>=snapshotChunk && b.Length%snapshotChunk==0)?b.Length-snapshotChunk:b.Length-256;
    uint schema=BitConverter.ToUInt32(b,o+4);
-   if(BitConverter.ToUInt32(b,o)!=0x314e5953 || (schema<1 || schema>3))throw new InvalidDataException("동기화 기록 형식 오류");
+   if(BitConverter.ToUInt32(b,o)!=0x314e5953 || (schema<1 || schema>4))throw new InvalidDataException("동기화 기록 형식 오류");
+   if(schema>=4 && (b.Length-o<snapshotChunk || BitConverter.ToUInt32(b,o+256)!=0x31504e53 || BitConverter.ToUInt32(b,o+260)!=1700 || BitConverter.ToUInt32(b,o+264)!=292))throw new InvalidDataException("동기화 상태 스냅샷이 불완전합니다: "+path);
    var s=new StringBuilder();uint reason=BitConverter.ToUInt32(b,o+8);
    s.AppendLine("게임 안전성 보호로 대전을 중단했습니다. 자동 복구된 것은 아닙니다.");
    s.AppendLine("원인 경로: "+(reason==1?"응답 대기 후 상대 제외 요청":reason==2?"원본 동기화 검사값 불일치":reason==3?"상대의 강제 제외 통지 수신":reason==4?"유닛 행동 함수 범위 초과 차단":reason==5?"게임 상태 지문 불일치":reason==6?"동기화 장벽 진단 형식 오류":"알 수 없음"));
@@ -70,10 +72,15 @@ namespace SamKookFreeNet {
    }
    s.AppendLine("frame="+BitConverter.ToUInt32(b,o+12)+" localSlot="+BitConverter.ToUInt32(b,o+16)+" peerSlot="+BitConverter.ToInt32(b,o+20));
    s.AppendLine("rng="+BitConverter.ToUInt32(b,o+24).ToString("X8")+" rngCalls="+BitConverter.ToUInt32(b,o+28)+" requiredMask="+BitConverter.ToUInt32(b,o+32).ToString("X")+" readyMask="+BitConverter.ToUInt32(b,o+36).ToString("X"));
+   string[] factions={"신라","고구려","백제"};
    for(int slot=0;slot<8;slot++) {
     s.Append("slot="+slot);
-    string[] names={" state="," check="," seq="," read="," write="," pending="};
-    for(int f=0;f<6;f++)s.Append(names[f]+BitConverter.ToInt32(b,o+64+slot*24+f*4));
+    int packed=BitConverter.ToInt32(b,o+64+slot*24+4);
+    s.Append(" state="+BitConverter.ToInt32(b,o+64+slot*24));
+    if(schema>=4) { int faction=(packed>>8)&255;s.Append(" faction="+(faction<factions.Length?factions[faction]:faction.ToString())); }
+    s.Append(" check="+(packed&255));
+    string[] names={" seq="," read="," write="," pending="};
+    for(int f=0;f<4;f++)s.Append(names[f]+BitConverter.ToInt32(b,o+64+slot*24+8+f*4));
     s.AppendLine();
    }
    return s.ToString();

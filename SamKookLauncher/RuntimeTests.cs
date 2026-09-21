@@ -65,6 +65,15 @@ static class RuntimeTests {
   File.WriteAllBytes(fixturePath,fixture);
   report=(string)sync.GetMethod("ReadReport").Invoke(null,new object[]{fixturePath});
   Check(report.Contains("유닛·건물 핵심 상태") && report.Contains("slotA=0") && report.Contains("slotB=1") && report.Contains("11111111") && report.Contains("22222222"),"Sectional sync report decoding failed");
+  var snapshotFixture=new byte[256+16+1700*292];Buffer.BlockCopy(fixture,0,snapshotFixture,0,256);
+  Buffer.BlockCopy(BitConverter.GetBytes(4),0,snapshotFixture,4,4);
+  Buffer.BlockCopy(BitConverter.GetBytes(0x31504e53),0,snapshotFixture,256,4);
+  Buffer.BlockCopy(BitConverter.GetBytes(1700),0,snapshotFixture,260,4);
+  Buffer.BlockCopy(BitConverter.GetBytes(292),0,snapshotFixture,264,4);
+  Buffer.BlockCopy(BitConverter.GetBytes(0x49e0b8),0,snapshotFixture,268,4);
+  snapshotFixture[64+5]=1;File.WriteAllBytes(fixturePath,snapshotFixture);
+  report=(string)sync.GetMethod("ReadReport").Invoke(null,new object[]{fixturePath});
+  Check(report.Contains("faction=고구려") && report.Contains("유닛·건물 핵심 상태"),"Snapshot sync report decoding failed");
   File.WriteAllBytes(fixturePath,new byte[12]);bool rejectedReport=false;
   try{sync.GetMethod("ReadReport").Invoke(null,new object[]{fixturePath});}catch(TargetInvocationException ex){rejectedReport=ex.InnerException is InvalidDataException;}
   Check(rejectedReport,"Truncated sync report accepted");

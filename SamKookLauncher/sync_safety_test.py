@@ -17,7 +17,7 @@ class Game:
  def __init__(self,path,local=0,io_fail=False):
   self.u=Uc(UC_ARCH_X86,UC_MODE_32);self.u.mem_map(0x400000,0x400000);self.u.mem_map(0x1000000,0x100000)
   self.u.mem_write(0x400000,pefile.PE(path).get_memory_mapped_image())
-  self.logs=[];self.departed=[];self.sent=[];self.io_fail=io_fail;self.packets=[];self.pump_stop=False
+  self.logs=[];self.snapshots=[];self.departed=[];self.sent=[];self.io_fail=io_fail;self.packets=[];self.pump_stop=False
   for i,iat in enumerate((0x45f124,0x45f098,0x45f0ec,0x45f19c,0x45f0dc,0x45f270)):
    self.w32(iat,0x1090000+i*16)
   self.w32(0x5173e4,1);self.w32(0x611e14,2);self.w32(0x5173d0,3000)
@@ -42,8 +42,10 @@ class Game:
   elif a==0x1090010:self.ret(2,0x1090100)
   elif a==0x1090100:self.ret(7,0xffffffff if self.io_fail else 42)
   elif a==0x1090020:
-   assert self.get(sp+12)==256
-   self.logs.append(bytes(u.mem_read(self.get(sp+8),256)));self.ret(5,1)
+   size=self.get(sp+12);blob=bytes(u.mem_read(self.get(sp+8),size))
+   if size==256:self.logs.append(blob)
+   else:self.snapshots.append(blob)
+   self.ret(5,1)
   elif a in (0x1090030,0x1090040):self.ret(1,1)
   elif a==0x1090050:self.ret(0,1000)
   elif a==0x441310:self.departed.append(self.get(sp+4));self.ret()
@@ -80,9 +82,11 @@ for path in sys.argv[2:]:
    assert g.players()==before and not g.departed and not g.sent
    assert len(g.logs)==(0 if failure else 1)
    if not failure:
-    r=g.logs[0];assert struct.unpack_from('<4I',r)==(0x314e5953,3,1,3000)
+    r=g.logs[0];assert struct.unpack_from('<4I',r)==(0x314e5953,4,1,3000)
     assert struct.unpack_from('<I',r,16)[0]==local
     assert struct.unpack_from('<4I',r,24)==(12345,678,3,1<<local)
+    assert [len(x) for x in g.snapshots]==[16,496400]
+    assert struct.unpack_from('<4I',g.snapshots[0])==(0x31504e53,1700,292,0x49e0b8)
    g.run(0x439770);assert len(g.logs)==(0 if failure else 1)
    # Original check path must not evict players after an earlier failure.
    g.run(0x443710);assert g.players()==before

@@ -49,6 +49,17 @@ launcher polls the per-launch report while the process remains alive, so a
 fail-stop that returns to the lobby is explained immediately. Compatibility
 profile sync-safety-4 prevents mixed sessions.
 
+## v1.12.2 exact mismatch snapshot
+
+The symmetric A/B frame-8391 records confirmed the same RNG/barrier and a core
+entity mismatch, but sectional hashes cannot identify the entity. Schema 4 now
+appends a fixed snapshot header and the contiguous 1,700 x 292-byte native unit
+array after the 256-byte diagnostic record. Player names, account material and
+chat are not included. Slot faction is packed with the native check byte in the
+record. `sync_snapshot_compare.py` reports differences in documented type,
+owner, kind, HP, action, order target and position fields. The compatibility
+profile is sync-safety-5.
+
 unit_dispatch_test.py reproduces original invalid target assignment and exact
 call, covers bad IDs/owner/queue/type, valid building equivalence, all 256
 action indices on base/observer12/observer36 images, and AI non-building guard.

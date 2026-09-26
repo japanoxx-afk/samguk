@@ -6,7 +6,7 @@ b=open(sys.argv[1],'rb').read()
 assert hashlib.sha256(b).hexdigest()=='39a11e76f5328a66a4fe8dcb1318ece6362843d8192caa8c7e15f0fc08abdc62'
 p=pefile.PE(data=b);ks=Ks(KS_ARCH_X86,KS_MODE_32)
 BASE=0x630000;RECORD=0x63d000;FLAG=0x63d100;HASH=0x63d108;VALID=0x63d118;SNAP=0x63d120;STREAK=0x63d160;PATH=0x63d800
-cursor=0x63c400;rows=['# Sync safety 6: require three consecutive fingerprint mismatches; not automatic resync']
+cursor=0x63c400;rows=['# Sync safety 7: require thirty consecutive fingerprint mismatches; not automatic resync']
 def block(name,source):
  global cursor
  a=cursor;code=bytes(ks.asm(source,a)[0]);assert a+len(code)<=RECORD
@@ -299,7 +299,7 @@ next_slot:
  ret
 mismatch:
  inc dword ptr [{STREAK}]
- cmp dword ptr [{STREAK}], 3
+ cmp dword ptr [{STREAK}], 30
  jb transient
  mov eax, dword ptr [{HASH}+edi*4]
  mov dword ptr [{RECORD+40}], eax

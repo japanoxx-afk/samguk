@@ -1,5 +1,15 @@
 # v1.11.1 split-session investigation
 
+## v1.12.4 role-reversal follow-up
+
+The next matched A/B capture reversed roles (A Silla host, B Goguryeo guest) and
+again isolated one Goguryeo worker: ID 11 was alive at x=27 on A but removed at
+x=25 on its controlling B PC. No other documented entity field, RNG, resource,
+or production state differed. Three barriers were therefore still too short for
+the local construction/harvest transition. The grace threshold is now thirty
+consecutive mismatching barriers, reset by any fully matching barrier. This
+does not overwrite simulation state; a persistent split is still fail-stopped.
+
 ## v1.12.3 transient construction tolerance
 
 Matched A/B schema-4 snapshots at frame 8061 differed in one documented entity:

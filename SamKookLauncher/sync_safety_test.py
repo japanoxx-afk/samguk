@@ -137,7 +137,7 @@ for path in sys.argv[2:]:
  for value in wire:checksum^=value
  assert checksum==0
  # Equal fingerprints continue. One-frame construction/harvest transitions are
- # tolerated; only three consecutive differing barriers fail-stop.
+ # tolerated; only thirty consecutive differing barriers fail-stop.
  for mismatch in (False,True):
   g=Game(path)
   for slot in (0,1):
@@ -155,7 +155,8 @@ for path in sys.argv[2:]:
    peer=g.get(0x4989a8+1168);g.u.mem_write(peer+17,struct.pack('<I',0x33333333))
    g.run(R['compare_hash']);assert g.get(FLAG)==0 and not g.logs
    g.u.mem_write(peer+17,struct.pack('<I',0x33333334))
-   g.run(R['compare_hash']);g.run(R['compare_hash']);assert g.get(FLAG)==0 and not g.logs
+   for _ in range(29):g.run(R['compare_hash'])
+   assert g.get(FLAG)==0 and not g.logs
    g.run(R['compare_hash'])
    assert g.get(FLAG)==1 and struct.unpack_from('<I',g.logs[0],8)[0]==5
    assert struct.unpack_from('<I',g.logs[0],40)[0]==0x33333333

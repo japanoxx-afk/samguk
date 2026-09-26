@@ -58,7 +58,7 @@ namespace SamKookFreeNet {
         Hook(data,0x333d5,va+16384,new byte[]{0xe8,0x96,0x14,0,0},0xe8);
       }
       if(timer) {
-        byte[] format=Encoding.ASCII.GetBytes("%02u:%02u:%02u\0");
+        byte[] format=Encoding.ASCII.GetBytes("%02u:%02u:%02u  Sync:%u/30\0");
         for(int i=0;i<format.Length;i++)if(data[raw+60000+i]!=0)throw new InvalidDataException("타이머 문자열 공간 충돌");
         Buffer.BlockCopy(format,0,data,raw+60000,format.Length);
         var c=new Code(va+17408);c.Emit(0x9c,0x60);
@@ -70,9 +70,12 @@ namespace SamKookFreeNet {
         c.Emit(0xa1);c.Int(0x5173d0);c.Emit(0x33,0xd2,0xb9);c.Int(30);c.Emit(0xf7,0xf1);
         c.Emit(0x33,0xd2,0xb9);c.Int(3600);c.Emit(0xf7,0xf1,0x89,0xc3,0x89,0xd0);
         c.Emit(0x33,0xd2,0xb9);c.Int(60);c.Emit(0xf7,0xf1);
+        // Consecutive mismatching barriers, reset on a matching barrier/new game.
+        // Read-only diagnostic shared with SyncSafetyPatch at .fnfix+D160.
+        c.Emit(0xff,0x35);c.Int(va+0xd160);
         c.Emit(0x52,0x50,0x53,0x68);c.Int(va+60000);
-        c.Emit(0x68);c.Int(150);c.Emit(0x6a,20,0x83,0xee,88,0x56,0x57);
-        c.Branch(0xe8,0x453d20);c.Emit(0x83,0xc4,32);
+        c.Emit(0x68);c.Int(150);c.Emit(0x6a,20,0x81,0xee);c.Int(240);c.Emit(0x56,0x57);
+        c.Branch(0xe8,0x453d20);c.Emit(0x83,0xc4,36);
         c.Label("done");c.Emit(0x61,0x9d,0xa1);c.Int(0x6124c0);c.Branch(0xe9,0x442d20);
         Install(data,raw+17408,c);
         Hook(data,0x42d1b,va+17408,new byte[]{0xa1,0xc0,0x24,0x61,0},0xe9);

@@ -5,7 +5,7 @@ from pathlib import Path
 COUNT,STRIDE=1700,292
 CHUNK=256+16+COUNT*STRIDE
 FIELDS=((4,1,'type'),(5,1,'owner'),(6,1,'kind'),(8,2,'hp'),
-        (12,2,'action'),(0x18,2,'orderX'),(0x1a,2,'orderY'),
+        (12,2,'field0c'),(0x12,2,'action'),(0x18,2,'orderX'),(0x1a,2,'orderY'),
         (0x106,2,'x'),(0x108,2,'y'))
 
 def load(path):

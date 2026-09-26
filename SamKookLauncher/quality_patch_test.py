@@ -49,8 +49,9 @@ class Game:
         if a not in (0x43e100,0x43e170,0x4347c0,0x433b50,0x453d20):return
         sp=u.reg_read(UC_X86_REG_ESP)
         if a==0x453d20:
-            args=tuple(self.r32(sp+4+i*4) for i in range(8))
-            assert bytes(u.mem_read(args[4],15))==b'%02u:%02u:%02u\0'
+            args=tuple(self.r32(sp+4+i*4) for i in range(9))
+            fmt=b'%02u:%02u:%02u  Sync:%u/30\0'
+            assert bytes(u.mem_read(args[4],len(fmt)))==fmt
             self.draws.append(args)
             for r in REGS:u.reg_write(r,0x12345678)
             u.reg_write(UC_X86_REG_EFLAGS,0x202)
@@ -103,10 +104,12 @@ for path in sys.argv[1:]:
                         (1800,(0,1,0)),(108000,(1,0,0)),(30*3723,(1,2,3))]:
         for width in (640,800,1024,1280):
             g=Game(path);g.w32(0x5173d0,ticks);g.w16(0x613104,width);g.w32(0x6124c0,0x1234)
+            streak=(0,1,29,30)[(ticks+width)%4];g.w32(0x63d160,streak)
             for i,r in enumerate(REGS):g.u.reg_write(r,0x1000+i)
             g.u.reg_write(UC_X86_REG_EFLAGS,0x247)
             g.call(0x442d1b,stop=0x442d20)
-            assert len(g.draws)==1 and g.draws[0]==(0x1050000,width-88,20,150,g.draws[0][4],*clock)
+            assert len(g.draws)==1 and g.draws[0]==(0x1050000,width-240,20,150,g.draws[0][4],*clock,streak)
+            assert g.r32(0x63d160)==streak
             assert g.u.reg_read(UC_X86_REG_EAX)==0x1234
             assert [g.u.reg_read(r) for r in REGS[1:]]==[0x1000+i for i in range(1,7)]
             assert g.u.reg_read(UC_X86_REG_EFLAGS)==0x247 and g.u.reg_read(UC_X86_REG_ESP)==SP

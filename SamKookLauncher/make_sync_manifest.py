@@ -6,7 +6,7 @@ b=open(sys.argv[1],'rb').read()
 assert hashlib.sha256(b).hexdigest()=='39a11e76f5328a66a4fe8dcb1318ece6362843d8192caa8c7e15f0fc08abdc62'
 p=pefile.PE(data=b);ks=Ks(KS_ARCH_X86,KS_MODE_32)
 BASE=0x630000;RECORD=0x63d000;FLAG=0x63d100;HASH=0x63d108;VALID=0x63d118;SNAP=0x63d120;STREAK=0x63d160;PATH=0x63d800
-cursor=0x63c400;rows=['# Sync safety 7: require thirty consecutive fingerprint mismatches; not automatic resync']
+cursor=0x63c400;rows=['# Sync safety 8: prevent renderer from deleting units; consecutive fingerprint diagnostics']
 def block(name,source):
  global cursor
  a=cursor;code=bytes(ks.asm(source,a)[0]);assert a+len(code)<=RECORD
@@ -18,6 +18,18 @@ def hook(a,n,t,opcode=0xe9):
  rows.append('H %X %s %s'%(off,b[off:off+n].hex(),code.hex()))
 for a,s in ((0x63d180,b'kernel32.dll\0'),(0x63d1a0,b'CreateFileW\0')):
  rows.append('B %X %s'%(a-BASE,s.hex()))
+
+# Native viewport renderer 41B3E0 deletes a simulation unit when either its
+# sprite image or animation pointer is missing. Only the viewing PC runs this
+# cleanup: HP=0, occupancy=0, animation=null. Skip drawing instead. Normal
+# simulation death/removal routines are untouched. Both JZs share the existing
+# register-restoring renderer epilogue.
+for a in (0x41ba60,0x41ba6b):
+ off=p.get_offset_from_rva(a-0x400000)
+ assert b[off:off+2]==b'\x0f\x84'
+ assert a+6+struct.unpack_from('<i',b,off+2)[0]==0x41bdd4
+ code=b'\x0f\x84'+struct.pack('<i',0x41be4f-a-6)
+ rows.append('H %X %s %s'%(off,b[off:off+6].hex(),code.hex()))
 
 # EAX=reason, EDX=peer. Preserve registers/flags; no player state/ownership writes.
 # One fixed binary record per stopped match, appended using Unicode file paths.

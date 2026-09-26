@@ -136,8 +136,8 @@ for path in sys.argv[2:]:
  checksum=0
  for value in wire:checksum^=value
  assert checksum==0
- # Equal fingerprints continue. One-frame construction/harvest transitions are
- # tolerated; only thirty consecutive differing barriers fail-stop.
+ # Matching fingerprints reset the grace counter. Thirty consecutive mismatches
+ # fail-stop. This does not establish that a gameplay divergence will converge.
  for mismatch in (False,True):
   g=Game(path)
   for slot in (0,1):

@@ -1,5 +1,37 @@
 # v1.11.1 split-session investigation
 
+## v1.12.5 viewport-renderer state mutation
+
+Matched 2026-09-27 captures: frame 16899, A Goguryeo host, B Baekje guest.
+Unit 114 is a live Goguryeo worker on B but has been reused for a Baekje unit
+on A; subsequent Baekje units occupy 114/115 on A versus 115/120 on B.
+This is divergent entity allocation, not proof of a transient construction state.
+Earlier construction/convergence conclusions and threshold increases did not
+establish a root cause.
+
+Original viewport renderer 41B3E0 performs screen bounds culling first. At
+41BA60 it branches to 41BDD4 if the sprite image resource is null; 41BA6B
+branches there if unit+48 (animation pointer) is null. The cleanup at 41BDD4
+clears ground/naval occupancy, writes HP=0 at 41BE18/41BE48, and clears unit+48.
+Consequently a visible unit can be killed without a simulation command while
+the same unit on an off-screen peer survives. The real prior dead snapshots
+have HP=0 and animation=null with no death-frame update, consistent with this
+path (not conclusive proof that the incident entered it).
+
+Both conditional branches now target the existing renderer epilogue 41BE4F.
+Normal image drawing and simulation removal paths are unchanged. No external
+assets, HP values, RNG state or queued player commands are overwritten.
+renderer_sync_test.py executes the complete original renderer with real live
+incident worker records, viewport inside/outside and independently missing
+image/animation pointers. Original on-screen execution zeroes HP/occupancy;
+the off-screen peer does not. Patched execution preserves the full unit record
+and occupancy in all cases and matches normal blit calls with valid resources.
+API blits are stubbed; actual two-PC replay of the incident is still required.
+
+Compatibility profile sync-safety-8 prevents mixed versions. The existing
+30-barrier threshold is unchanged. HUD reads D160 (consecutive count) only.
+Git automatic upload code was removed; the UI opens the local sync-logs folder.
+
 ## v1.12.4 role-reversal follow-up
 
 The next matched A/B capture reversed roles (A Silla host, B Goguryeo guest) and

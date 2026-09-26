@@ -66,7 +66,15 @@ static class MapPreviewRenderer {
             bitmap.SetPixel(x,y,Color.FromArgb(r,g,b));
           }
         }
-        bitmap.Save(output,ImageFormat.Png);
+        var starts=SamKookFreeNet.MapStarts.Read(header);
+        int padX=(Marshal.ReadInt16(mapState,2)-width)/2,padY=(Marshal.ReadInt16(mapState,4)-height)/2;
+        using(var marked=SamKookFreeNet.MapStarts.Overlay(bitmap,starts,s=> {
+          int x=s.X+padX,y=s.Y+padY;
+          if(x<0 || x>=232 || y<0 || y>=232)throw new InvalidDataException("에디터 시작 좌표 범위 초과");
+          // Use the editor's actual tile-to-minimap lookup, including rounding.
+          return new PointF(Marshal.ReadByte(IntPtr.Add(module,0x599e0),x)+Marshal.ReadByte(IntPtr.Add(module,0x59810),x)/2f,
+            Marshal.ReadByte(IntPtr.Add(module,0x59ac8),y)+Marshal.ReadByte(IntPtr.Add(module,0x598f8),y)/2f);
+        }))marked.Save(output,ImageFormat.Png);
       }
       return 0;
     } catch(Exception ex) { try { Console.Error.WriteLine(ex.ToString()); } catch {} return 2; }

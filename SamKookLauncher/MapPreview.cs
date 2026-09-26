@@ -79,7 +79,9 @@ namespace SamKookFreeNet {
           try {
             var result=await Task.Run(()=>{
               int w,h;Render(selected.Path,out w,out h).Dispose();string status;Bitmap next;
-              try {next=RenderEditor(game,selected.Path,out status);} catch(Exception editorError){next=Render(selected.Path,out w,out h);status="구조 프리뷰(에디터 사용 불가: "+editorError.Message+")";}
+              var starts=MapStarts.Read(File.ReadAllBytes(selected.Path));
+              try {next=RenderEditor(game,selected.Path,out status);} catch(Exception editorError){using(var terrain=Render(selected.Path,out w,out h))next=MapStarts.Overlay(terrain,starts,p=>new PointF(p.X+0.5f,p.Y+0.5f));status="구조 프리뷰(에디터 사용 불가: "+editorError.Message+")";}
+              status+="\n스타팅 "+starts.Length+"곳 · 노란 번호 = 맵 시작 슬롯 (실제 배정은 게임 설정에 따름)";
               return new PreviewResult { Image=next,Text=Path.GetFileName(selected.Path)+"  /  "+w+"×"+h+"  /  "+status };
             });
             if(dialog.IsDisposed || current!=request){result.Image.Dispose();return;}

@@ -7,6 +7,12 @@ assert hashlib.sha256(b).hexdigest()=='39a11e76f5328a66a4fe8dcb1318ece6362843d81
 p=pefile.PE(data=b);ks=Ks(KS_ARCH_X86,KS_MODE_32)
 BASE=0x630000;RECORD=0x63d000;FLAG=0x63d100;HASH=0x63d108;VALID=0x63d118;SNAP=0x63d120;STREAK=0x63d160;PATH=0x63d800
 cursor=0x63c400;rows=['# Sync safety 8: prevent renderer from deleting units; consecutive fingerprint diagnostics']
+
+# Image resource destructor: tests buffer +0C but freed +10 a second time.
+# Each 20-byte record owns distinct +0C and +10 allocations (loader 452270).
+off=p.get_offset_from_rva(0x45241a-0x400000)
+assert b[off:off+3]==bytes.fromhex('8b4e10')
+rows.append('H %X 8b4e10 8b4e0c'%off)
 def block(name,source):
  global cursor
  a=cursor;code=bytes(ks.asm(source,a)[0]);assert a+len(code)<=RECORD

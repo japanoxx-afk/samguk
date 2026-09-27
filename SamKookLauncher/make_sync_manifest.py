@@ -212,6 +212,25 @@ queue:
  jne queue
  pop ecx
 next_unit:
+ mov edx, 1700
+ sub edx, ecx
+ shl edx, 6
+ add edx, 0x642000
+ mov eax, [edx]
+ xor ebp, eax
+ rol ebp, 5
+ cmp eax, 8
+ ja orders_done
+ add edx, 8
+orders_hash:
+ test eax, eax
+ jz orders_done
+ xor ebp, dword ptr [edx]
+ rol ebp, 5
+ add edx, 4
+ dec eax
+ jmp orders_hash
+orders_done:
  add esi, 292
  dec ecx
  jne units

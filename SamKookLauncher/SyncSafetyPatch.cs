@@ -10,7 +10,7 @@ namespace SamKookFreeNet {
  // lockstep barrier only; compatibility GUIDs prevent mixed-version sessions.
  static class SyncSafetyPatch {
   public static string Profile(bool latency,bool selection,bool rice,bool observer) {
-   return "sync-safety-10;crowd-arrival=1;rally-exit=1;latency="+latency+";selection36="+selection+";rice="+rice+";observer2="+observer;
+   return "sync-safety-11;orders=1;crowd-arrival=1;rally-exit=1;latency="+latency+";selection36="+selection+";rice="+rice+";observer2="+observer;
   }
   public static byte[] Apply(byte[] input,string logPath,bool latency,bool selection,bool rice,bool observer) {
    input=GameQualityPatch.ApplyRallyExit(input);
@@ -50,7 +50,7 @@ namespace SamKookFreeNet {
     var digest=sha.ComputeHash(Encoding.UTF8.GetBytes(Profile(latency,selection,rice,observer)));
     Buffer.BlockCopy(digest,0,data,0x5f670,16);
    }
-   return data;
+   return OrderQueuePatch.Apply(data);
   }
   public static string ReadReport(string path) {
    if(!File.Exists(path))return null;

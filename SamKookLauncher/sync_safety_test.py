@@ -128,6 +128,10 @@ for path in sys.argv[2:]:
  # appended to the native barrier with a valid XOR trailer.
  g=Game(path);g.run(R['state_hash']);h=bytes(g.u.mem_read(HASH,16))
  g2=Game(path);g2.run(R['state_hash']);assert bytes(g2.u.mem_read(HASH,16))==h
+ # Pending movement is simulation state even before the unit reaches it.
+ orders=Game(path);orders.w32(0x642040,1);orders.w32(0x642048,40|(50<<16));orders.run(R['state_hash'])
+ ho=bytes(orders.u.mem_read(HASH,16));assert ho[:8]==h[:8] and ho[8:12]!=h[8:12] and ho[12:]==h[12:]
+ orders.w32(0x642040,0);orders.run(R['state_hash']);assert bytes(orders.u.mem_read(HASH,16))==h
  g2.w32(0x49b054,g2.get(0x49b054)+1);g2.run(R['state_hash'])
  h2=bytes(g2.u.mem_read(HASH,16));assert h2!=h and h2[:4]==h[:4] and h2[8:]==h[8:]
  g=Game(path);g.w32(0x5173e4,0);g.run(0x438a90)

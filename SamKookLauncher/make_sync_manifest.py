@@ -556,4 +556,24 @@ stopped:
  ret
 ''')
 hook(0x406336,10,dispatch)
+# Occupied ground move target: native 410133 cancels even from across the map
+# when the spiral's first free tile is farther than the original target.
+# Keep native settling only in the adjacent 8 tiles, and preserve ship behavior.
+crowd=block('occupied_target_continue', '''
+ jg proceed
+ cmp edx, 2
+ jle stop
+ push eax
+ movzx eax, byte ptr [esi+4]
+ imul eax, eax, 84
+ cmp word ptr [eax+0x46134c], 1
+ pop eax
+ jne stop
+proceed:
+ mov dword ptr [esi+0x18], ebx
+ jmp 0x410138
+stop:
+ jmp 0x41014b
+''')
+hook(0x410133,5,crowd)
 print('\n'.join(rows))

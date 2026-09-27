@@ -45,6 +45,17 @@ static class RuntimeTests {
    if(flags==0)File.WriteAllBytes(Path.Combine(root,"sync-base.exe"),guarded);
   }
   Check(profiles.Count==16,"Different simulation settings can connect to the same session");
+  var exitPatch=asm.GetType("SamKookFreeNet.GameQualityPatch").GetMethod("ApplyRallyExit");
+  var exitSource=(byte[])data.Clone();exitSource[0x124da]^=1;bool exitRejected=false;
+  try{exitPatch.Invoke(null,new object[]{exitSource});}catch(TargetInvocationException ex){exitRejected=ex.InnerException is InvalidDataException;}
+  Check(exitRejected,"Unknown production placement call accepted");
+  var exitPatched=(byte[])exitPatch.Invoke(null,new object[]{data});exitRejected=false;
+  try{exitPatch.Invoke(null,new object[]{exitPatched});}catch(TargetInvocationException ex){exitRejected=ex.InnerException is InvalidDataException;}
+  Check(exitRejected && BitConverter.ToInt32(data,0x124da)==0x14522,"Duplicate exit patch accepted or input modified");
+  using(var digest=System.Security.Cryptography.SHA256.Create()) {
+   var old=digest.ComputeHash(System.Text.Encoding.UTF8.GetBytes("sync-safety-8;latency=False;selection36=False;rice=False;observer2=False"));
+   Check(!profiles.Contains(BitConverter.ToString(old,0,16)),"Old spawn rules can enter new sessions");
+  }
   var pathOnly=(byte[])syncApply.Invoke(null,new object[]{safeNetwork,Path.Combine(root,"다른 진단 경로.bin"),false,false,false,false});
   Check(profiles.Contains(BitConverter.ToString(pathOnly,0x5f670,16)),"Log path incorrectly affects network compatibility");
   var fixture=new byte[256];

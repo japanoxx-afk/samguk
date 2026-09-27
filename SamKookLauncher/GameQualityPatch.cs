@@ -113,6 +113,17 @@ namespace SamKookFreeNet {
       Hook(data,0x12539,va+18432,new byte[]{0x8b,0x4e,0x18,0x89,0x88,0xd0,0xe0,0x49,0},0xe9);
       return data;
     }
+    public static byte[] ApplyRallyExit(byte[] input) {
+      int raw,va;var data=Expand(input,out raw,out va);
+      if(va!=0x630000)throw new InvalidDataException("생산 출구 패치 주소 불일치");
+      // Assembled from rally_exit.asm at .fnfix+4C00. Production land branch only.
+      string hex="9c6083ec2c89e580beca000000150f85ac0100008b3de47a470085ff0f849e0100000fb7470283f8100f82910100003de80000000f878601000083e8048945240fb7470483f8100f82730100003de80000000f876801000083e8048945280fb7461883f8040f82550100003b45240f834c0100008945100fb7461a83f8040f823c0100003b45280f83330100008945140fb67d58c1e704833d9c794700000f841c010000033d9c7947000fbe4f040fbe57050fbe470329c283f9010f8cff00000083f9200f8ff600000083fa010f8ced00000083fa200f8fe40000000fb7860601000001c148894500894d040fb7860801000001c24889450889550c8b45103b45007e173b45047d128b45143b45087e0a3b450c7d05e9a5000000c74518ffffff7f8b55088b4d0083f9047c5f3b4d247d5a83fa047c553b55287d503b4d00740f3b4d04740a3b550874053b550c753c69c2e800000001c866833c455cee590000752980b87ca05d00107f2089c82b45100fafc089d72b7d140fafff01f83b45187d09894518894d1c895520413b4d047e96423b550c7e8d817d18ffffff7f741f8b451c66a31c8247008b452066a31e824700c745480100000083c42c619dc383c42c619de9361cdfff";
+      var c=new Code(va+19456);
+      for(int i=0;i<hex.Length;i+=2)c.Emit(Convert.ToByte(hex.Substring(i,2),16));
+      Install(data,raw+19456,c);
+      Hook(data,0x124d9,va+19456,new byte[]{0xe8,0x22,0x45,1,0},0xe8);
+      return data;
+    }
     static void Put(byte[] b,int o,int v){Buffer.BlockCopy(BitConverter.GetBytes(v),0,b,o,4);}
     static void Check(byte[] b,int o,byte[] expected){for(int i=0;i<expected.Length;i++)if(b[o+i]!=expected[i])throw new InvalidDataException("편의 기능 명령어 검증 실패: "+o.ToString("X"));}
     static void Hook(byte[] b,int o,int target,byte[] expected,byte opcode){Check(b,o,expected);b[o]=opcode;Put(b,o+1,target-(0x400000+o+5));for(int i=5;i<expected.Length;i++)b[o+i]=0x90;}

@@ -1,5 +1,24 @@
 # v1.8.0 exact-build patch notes
 
+## v1.12.7 rally exit
+
+Land production call 4124D9 is redirected from 426A00 to .fnfix+4C00.
+Only native rally mode 21 is eligible. Building anchor +106/+108 and native
+shape +4, (+5 minus +3) determine the one-tile perimeter. Occupancy 59EE5C,
+terrain 5DA07C (signed <=16), map dimensions 477AE4 and four-tile margins
+match native placement. Integer squared distance and row-major ties determine
+the selected tile; camera, local player, wall clock and RNG are never read.
+No eligible ring cell / disabled / internal / invalid rally tail-calls native
+placement with unchanged cdecl arguments and saved registers/flags. Successful
+selection returns EAX=1 and the native result coordinates 47821C/47821E.
+Code is assembled from rally_exit.asm; rally_exit_test.py checks the emitted
+bytes, actual native placement fallback and production call integration.
+The shape table, allocator and initializer in fixtures are synthetic; physical
+multiplayer and visual emergence of each building require in-game verification.
+Ships and other native callers are untouched. Applied with sync protection on
+every launch; profile sync-safety-9 separates old clients. Space 4C00..4FFF is
+between rice rally (4800) and observer (5000), with zero/expected-byte checks.
+
 Original SHA256: `39A11E76F5328A66A4FE8DCB1318ECE6362843D8192CAA8C7E15F0FC08ABDC62`.
 QueuePatch verifies this before either optional patch. Apply order: queue/IP,
 sender yield, latency, optional selection extension, GameQualityPatch.

@@ -629,4 +629,14 @@ native:
  jmp 0x443ba7
 ''')
 hook(0x443ba0,7,buildings)
+# The real double-click caller previously rejected every non-unit before
+# reaching the selector. Admit buildings too; retain its ownership check and
+# native 1200 selection packet. Other entity kinds remain excluded.
+building_input=block('building_double_click_input','''
+ mov dl, byte ptr [ecx+0x49e0be]
+ cmp dl, 1
+ jbe 0x433b17
+ jmp 0x433b46
+''')
+hook(0x433b0d,8,building_input)
 print('\n'.join(rows))

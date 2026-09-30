@@ -40,6 +40,16 @@ for path in args:
   else:q.w8(0x63b008,1);q.w8(0x63b000,1)
   q.call(0x433330,stop=0x4331c0);assert q.r16(0x498724)==0
  g=Controls(path)
+ # Exercise actual double-click caller, including its native kind/owner gate,
+ # not only the inner selector. Hit testing is the only mouse/UI mock here.
+ for kind,owner,expected in ((1,0,3),(1,1,0),(2,0,0)):
+  q=Controls(path);q.hit=1
+  for i in range(1,4):q.unit_record(i,kind=kind,owner=owner,typ=1,x=24+i)
+  q.call(0x433af1)
+  assert q.r16(0x498724)==(1 if expected else 0),'double-click input gate'
+  if expected:
+   assert [q.r16(q.local+2*i) for i in range(3)]==[1,2,3]
+   assert q.r32(PACKET)==0x1200,'native selection packet not sent'
  for i in range(1,4):g.unit_record(i,kind=1,typ=1,x=24+i)
  g.unit_record(4,kind=1,typ=11);g.unit_record(5,kind=1,typ=1,owner=1);g.unit_record(6,kind=1,typ=1,x=100)
  g.call(0x443ba0,(0,1))

@@ -1,5 +1,6 @@
 # Sync safety 8: prevent renderer from deleting units; consecutive fingerprint diagnostics
 H 5241A 8b4e10 8b4e0c
+H 343C1 e85a030000 9090909090
 B D180 6b65726e656c33322e646c6c00
 B D1A0 43726561746546696c655700
 H 1BA60 0f846e030000 0f84e9030000

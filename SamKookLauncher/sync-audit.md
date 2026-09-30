@@ -189,3 +189,34 @@ map and first divergent simulation time/action. No guard record means the
 incident may not have traversed these native exclusion paths; a future keyed
 state checksum/command trace would require its own protocol and determinism
 audit rather than hashing local selection, pointers, or rendering state.
+
+## 2026-10-01 incident and v1.14.1 placement fix
+
+The supplied files contain 2 and 5 schema-4 records respectively. Their last
+records match frame 24516, reason 5, RNG FB8A2FB8 / 2314 calls, ready/required
+masks 7. Local slots are 1 and 2; reported first mismatch is player/resources
+section 1, comparing slot 0 hash 6144CF6C with slot 1 hash 894452AF. (The
+third participant is an observer per the user.) Entity core comparison has
+equal types, owners, kinds and HP. Seven slot-2 type-1 workers differ in
+action/position/order coordinates: IDs 97,123,131,224,244,250,254. These are
+post-divergence snapshots, not a trace of the first divergent instruction.
+Map reported by user: rice-rich Hwangsanbeol. Exact launcher version pending.
+
+Independent native-code investigation found a deterministic local-input bug:
+4343C1 calls 434720 on a building-placement click. It clears occupancy at
+the selected worker's current coordinates, calls 40DDD0 (just RET), then
+writes the selected unit ID into that cell, without preserving its previous
+occupant. Moving units can occupy/reserve a different cell. Only the clicking
+PC executes this UI path, so empty or other-unit cells can be corrupted.
+
+placement_sync_test.py executes that native call and then native rice-target
+routine 422260 on two otherwise identical machines: one click changes the
+second worker's rice destination. v1.14.1 removes only that obsolete UI call;
+the synchronized construction packet code following it is unchanged. Test
+cases cover empty, another-unit and same-unit occupancy with both selection
+limits. Compatibility profile is bumped to prevent mixed simulations.
+
+This is a reproduced causal defect and a targeted correction, but is NOT
+proof that it initiated the supplied match's divergence. Existing files lack
+occupancy grids, raw player resource values and first-divergence history.
+Do not disable the fail-stop or claim comprehensive resynchronization.

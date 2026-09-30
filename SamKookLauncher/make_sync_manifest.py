@@ -13,6 +13,17 @@ cursor=0x63c400;rows=['# Sync safety 8: prevent renderer from deleting units; co
 off=p.get_offset_from_rva(0x45241a-0x400000)
 assert b[off:off+3]==bytes.fromhex('8b4e10')
 rows.append('H %X 8b4e10 8b4e0c'%off)
+
+# Local building-placement click 4343C1 invokes 434720: clear the selected
+# worker's tile, call 40DDD0 (an empty RET in this exact build), then write
+# the selected ID back unconditionally. A moving worker need not own that
+# occupancy cell. This changes simulation pathfinding on the clicking PC
+# alone. The call has no result used by its caller; remove this dead preview
+# operation, not the synchronized construction command that follows it.
+off=p.get_offset_from_rva(0x4343c1-0x400000)
+assert b[off:off+5]==bytes.fromhex('e85a030000')
+assert p.get_data(0x40ddd0-0x400000,1)==b'\xc3'
+rows.append('H %X e85a030000 9090909090'%off)
 def block(name,source):
  global cursor
  a=cursor;code=bytes(ks.asm(source,a)[0]);assert a+len(code)<=RECORD

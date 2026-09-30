@@ -10,7 +10,7 @@ namespace SamKookFreeNet {
  // lockstep barrier only; compatibility GUIDs prevent mixed-version sessions.
  static class SyncSafetyPatch {
   public static string Profile(bool latency,bool selection,bool rice,bool observer) {
-   return "sync-safety-11;orders=1;crowd-arrival=1;rally-exit=1;latency="+latency+";selection36="+selection+";rice="+rice+";observer2="+observer;
+   return "sync-safety-12;room-speed=1;orders=1;crowd-arrival=1;rally-exit=1;latency="+latency+";selection36="+selection+";rice="+rice+";observer2="+observer;
   }
   public static byte[] Apply(byte[] input,string logPath,bool latency,bool selection,bool rice,bool observer) {
    input=GameQualityPatch.ApplyRallyExit(input);

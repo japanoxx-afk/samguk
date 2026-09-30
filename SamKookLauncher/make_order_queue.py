@@ -268,4 +268,106 @@ loaded=block('loaded_reset',f'''
  jmp 0x42b485
 ''')
 hook(0x42b480,5,loaded)
+
+# Room speed: native combo 0/1/2 was stored but never consumed by the
+# multiplayer pacing loop. Snapshot payload byte 28 is outside the bounded
+# 20-byte player name + NUL at [7..27]. Encode only in host snapshots.
+cursor=0x640800
+rate=block('room_speed_rate','''
+ cmp eax, 2
+ jbe valid
+ mov eax, 1
+valid:
+ lea eax, [eax*2+6]
+ lea eax, [eax+eax*4]
+ mov word ptr [0x476904], ax
+ mov word ptr [0x476908], ax
+ ret
+''')
+speed_send=block('room_speed_send',f'''
+ pushfd
+ pushad
+ cmp byte ptr [0x59ee52], 0
+ jne done
+ mov eax, [esp+40]
+ cmp eax, 0x3100
+ jne done
+encode:
+ movzx eax, byte ptr [0x476926]
+ cmp eax, 2
+ jbe valid
+ mov eax, 1
+valid:
+ mov edi, [esp+44]
+ mov dl, al
+ add dl, 0xa0
+ mov byte ptr [edi+28], dl
+ call {rate}
+done:
+ popad
+ popfd
+ jmp 0x438cf0
+''')
+callhook(0x42d51b,speed_send)
+speed_receive=block('room_speed_receive',f'''
+ pushfd
+ pushad
+ test dx, dx
+ jne done
+ cmp eax, 0x3100
+ jne done
+decode:
+ cmp byte ptr [ebp+8], 39
+ jne done
+ movzx eax, byte ptr [ebp+37]
+ sub eax, 0xa0
+ cmp eax, 2
+ ja done
+ call {rate}
+done:
+ popad
+ popfd
+ cmp eax, 0x3100
+ jmp 0x42ccf9
+''')
+hook(0x42ccf4,5,speed_receive)
+speed_start=block('room_speed_start',f'''
+ pushfd
+ pushad
+ cmp byte ptr [0x59ee52], 0
+ jne done
+ movzx eax, byte ptr [0x476926]
+ call {rate}
+done:
+ popad
+ popfd
+ mov ax, word ptr [0x476904]
+ jmp 0x44319e
+''')
+hook(0x443198,6,speed_start)
+# LAN create dialog never even read the speed combo. Internet dialog already
+# writes 476926 at 429991. Capture LAN selection without disturbing game type.
+lan=block('lan_room_speed','''
+ pushfd
+ pushad
+ push 0
+ push 0
+ push 0x147
+ push 0x423
+ push esi
+ call dword ptr [0x45f240]
+ cmp eax, 2
+ jbe valid
+ mov eax, 1
+valid:
+ mov byte ptr [0x476926], al
+ popad
+ popfd
+ mov byte ptr [0x476925], al
+ jmp 0x42ee51
+''')
+hook(0x42ee4c,5,lan)
+# Keep network polling/command buffering, but stop occupancy from overriding
+# the chosen frame delay. Native queue consumption and epilogue are unchanged.
+hook(0x43a1bd,6,0x43a1f9)
 print('\n'.join(rows))

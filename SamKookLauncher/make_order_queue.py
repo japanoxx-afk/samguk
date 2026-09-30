@@ -639,4 +639,29 @@ building_input=block('building_double_click_input','''
  jmp 0x433b46
 ''')
 hook(0x433b0d,8,building_input)
+# Native 0400 receiver returned after the first building. Rally (21) must
+# visit the entire synchronized selection, on every peer, not local UI only.
+group_rally=block('group_building_rally','''
+ cmp word ptr [esi+2], 21
+ jne native
+ cmp byte ptr [eax+0x49e0be], 1
+ jne native
+ cmp cx, word ptr [esi]
+ jne assign
+ mov byte ptr [eax+0x49e182], 0
+ jmp 0x437f86
+assign:
+ mov byte ptr [eax+0x49e182], 21
+ mov dx, word ptr [esi]
+ mov word ptr [eax+0x49e0cc], dx
+ mov edx, dword ptr [esi+4]
+ mov dword ptr [eax+0x49e0d0], edx
+ jmp 0x437f86
+native:
+ cmp cx, word ptr [esi]
+ movsx eax, cx
+ jne 0x437fbe
+ jmp 0x437fac
+''')
+hook(0x437fa4,8,group_rally)
 print('\n'.join(rows))

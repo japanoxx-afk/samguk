@@ -9,7 +9,7 @@ cursor=0x640000;FLAG=0x641100;Q=0x642000
 rows=['# Shift ground move queue: eight pending destinations per unit']
 def block(name,asm):
  global cursor
- a=cursor;v=bytes(ks.asm(asm,a)[0]);assert a+len(v)<FLAG
+ a=cursor;v=bytes(ks.asm(asm,a)[0]);assert a+len(v)<FLAG or 0x65d000<=a<a+len(v)<=0x660000
  rows.extend(['# '+name+' '+hex(a),'B %X %s'%(a-0x630000,v.hex())]);cursor=(a+len(v)+15)&~15;return a
 def hook(a,n,target):
  off=p.get_offset_from_rva(a-0x400000)
@@ -370,4 +370,263 @@ hook(0x42ee4c,5,lan)
 # Keep network polling/command buffering, but stop occupancy from overriding
 # the chosen frame delay. Native queue consumption and epilogue are unchanged.
 hook(0x43a1bd,6,0x43a1f9)
+cursor=0x640a00
+army=block('select_army','''
+ pushfd
+ pushad
+ push 113
+ call dword ptr [0x45f234]
+ test ax, 0x8000
+ jz released
+ cmp byte ptr [0x641104], 0
+ jne done
+ mov byte ptr [0x641104], 1
+ cmp dword ptr [0x611e14], 2
+ jne done
+ cmp word ptr [0x477fa8], 0
+ jne done
+ cmp byte ptr [0x476a18], 0
+ jne done
+ movzx ebp, byte ptr [0x59ee52]
+ cmp ebp, 8
+ jae done
+ cmp byte ptr [0x63b008], 1
+ jne gather
+ cmp byte ptr [ebp+0x63b000], 1
+ je done
+gather:
+ mov edi, [0x44493e]
+ mov ecx, [0x432ebb]
+ xor eax, eax
+ push edi
+ rep stosw
+ pop edi
+ xor edx, edx
+ mov ebx, 1
+next_unit:
+ imul esi, ebx, 292
+ add esi, 0x49e0b8
+ cmp word ptr [esi+8], 0
+ jle next
+ movzx eax, byte ptr [esi+5]
+ cmp eax, ebp
+ jne next
+ cmp byte ptr [esi+6], 0
+ jne next
+ movzx eax, byte ptr [esi+4]
+ cmp eax, 1
+ je next
+ cmp eax, 11
+ je next
+ cmp eax, 23
+ je next
+ cmp eax, 44
+ ja next
+ imul eax, eax, 84
+ cmp dword ptr [eax+0x461364], 2
+ jl next
+ mov [edi+edx*2], bx
+ inc edx
+ cmp edx, [0x432ebb]
+ jae apply
+next:
+ inc ebx
+ cmp ebx, 1700
+ jb next_unit
+apply:
+ mov eax, [0x443f82]
+ mov [eax], dx
+ mov word ptr [0x6125c4], 0
+ call 0x443f80
+ push 0
+ push 0x1200
+ call 0x438cf0
+ add esp, 8
+ jmp done
+released:
+ mov byte ptr [0x641104], 0
+done:
+ popad
+ popfd
+ jmp 0x4331c0
+''')
+callhook(0x433330,army)
+# F2 originally opens the single-player load dialog. Reserve it for army
+# selection; loading remains available from the native game menu.
+assert b[0x2ac84:0x2ac88]==struct.pack('<I',0x42ab6a)
+rows.append('H 2AC84 6aab4200 41ab4200')
+cursor=0x65d000
+production=block('production_round_robin','''
+ push ebp
+ mov ebp, esp
+ push ebx
+ push esi
+ push edi
+ sub esp, 12
+ movzx ecx, word ptr [ebp+8]
+ cmp ecx, 12
+ jae native
+ movzx eax, word ptr [ecx*2+0x4986de]
+ cmp eax, 1
+ je eligible
+ cmp eax, 9
+ jne native
+eligible:
+ shl ecx, 3
+ mov [esp], ecx
+ movzx ebx, word ptr [0x611e12]
+ cmp ebx, 1
+ jb native
+ cmp ebx, 1700
+ jae native
+ imul esi, ebx, 292
+ add esi, 0x49e0b8
+ cmp byte ptr [esi+6], 1
+ jne native
+ movzx eax, byte ptr [esi+5]
+ cmp al, byte ptr [0x59ee52]
+ jne native
+ movzx eax, byte ptr [esi+4]
+ mov [esp+4], eax
+ mov edi, [0x432ec1]
+ mov ecx, [0x641108]
+ xor edx, edx
+scan:
+ cmp ecx, [0x432ebb]
+ jb index_ok
+ xor ecx, ecx
+index_ok:
+ movzx eax, word ptr [edi+ecx*2]
+ inc ecx
+ inc edx
+ cmp eax, 1
+ jb next
+ cmp eax, 1700
+ jae next
+ imul esi, eax, 292
+ add esi, 0x49e0b8
+ cmp word ptr [esi+8], 0
+ jle next
+ cmp byte ptr [esi+6], 1
+ jne next
+ push eax
+ movzx eax, byte ptr [esi+4]
+ cmp eax, [esp+8]
+ pop eax
+ jne next
+ push eax
+ mov al, byte ptr [esi+5]
+ cmp al, byte ptr [0x59ee52]
+ pop eax
+ jne next
+ push edx
+ mov edx, [esp+4]
+ cmp byte ptr [esi+edx+0x7d], 9
+ pop edx
+ jae next
+ mov [0x641108], ecx
+ mov word ptr [0x611e12], ax
+ push dword ptr [ebp+12]
+ push dword ptr [ebp+8]
+ call original
+ add esp, 8
+ mov word ptr [0x611e12], bx
+ jmp done
+next:
+ cmp edx, [0x432ebb]
+ jb scan
+native:
+ push dword ptr [ebp+12]
+ push dword ptr [ebp+8]
+ call original
+ add esp, 8
+done:
+ add esp, 12
+ pop edi
+ pop esi
+ pop ebx
+ pop ebp
+ ret
+original:
+ push ebx
+ push ebp
+ push esi
+ mov si, word ptr [esp+16]
+ jmp 0x43e5a8
+''')
+hook(0x43e5a0,8,production)
+
+buildings=block('select_same_buildings','''
+ pushfd
+ pushad
+ movzx ebx, word ptr [esp+44]
+ cmp ebx, 1
+ jb native
+ cmp ebx, 1700
+ jae native
+ imul esi, ebx, 292
+ add esi, 0x49e0b8
+ cmp byte ptr [esi+6], 1
+ jne native
+ mov al, byte ptr [esi+5]
+ cmp al, byte ptr [0x59ee52]
+ jne native
+ movzx ebp, byte ptr [esi+4]
+ mov edi, [0x44493e]
+ mov ecx, [0x432ebb]
+ xor eax, eax
+ push edi
+ rep stosw
+ pop edi
+ xor edx, edx
+ mov ebx, 1
+scan:
+ imul esi, ebx, 292
+ add esi, 0x49e0b8
+ cmp byte ptr [esi+6], 1
+ jne next
+ cmp word ptr [esi+8], 0
+ jle next
+ movzx eax, byte ptr [esi+4]
+ cmp eax, ebp
+ jne next
+ mov al, byte ptr [esi+5]
+ cmp al, byte ptr [0x59ee52]
+ jne next
+ movzx eax, word ptr [esi+0x106]
+ movzx ecx, word ptr [0x59ee54]
+ sub eax, ecx
+ movzx ecx, word ptr [0x613108]
+ cmp eax, ecx
+ jae next
+ movzx eax, word ptr [esi+0x108]
+ movzx ecx, word ptr [0x59ee56]
+ sub eax, ecx
+ movzx ecx, word ptr [0x61310a]
+ cmp eax, ecx
+ jae next
+ mov [edi+edx*2], bx
+ inc edx
+ cmp edx, [0x432ebb]
+ jae apply
+next:
+ inc ebx
+ cmp ebx, 1700
+ jb scan
+apply:
+ mov eax, [0x443f82]
+ mov [eax], dx
+ mov word ptr [0x6125c4], 0
+ call 0x443f80
+ popad
+ popfd
+ ret
+native:
+ popad
+ popfd
+ mov eax, [esp+4]
+ sub esp, 8
+ jmp 0x443ba7
+''')
+hook(0x443ba0,7,buildings)
 print('\n'.join(rows))

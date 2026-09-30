@@ -17,7 +17,7 @@ namespace SamKookFreeNet {
      string line;while((line=reader.ReadLine())!=null){
       if(line.Length==0 || line[0]=='#')continue;
       var f=line.Split(' ');int at=Convert.ToInt32(f[1],16);byte[] before,after;
-      if(f[0]=="B") {after=Bytes(f[2]);before=new byte[after.Length];if(at<0x10000 || at+after.Length>0x11000)throw new InvalidDataException("예약 코드 범위 오류");at+=raw;}
+      if(f[0]=="B") {after=Bytes(f[2]);before=new byte[after.Length];if(!((at>=0x10000 && at+after.Length<=0x11000)||(at>=0x2d000 && at+after.Length<=0x30000)))throw new InvalidDataException("예약 코드 범위 오류");at+=raw;}
       else if(f[0]=="H"){before=Bytes(f[2]);after=Bytes(f[3]);}else throw new InvalidDataException("예약 코드 형식 오류");
       if(before.Length!=after.Length || at<0 || at+before.Length>data.Length)throw new InvalidDataException("예약 코드 길이 오류");
       for(int i=0;i<before.Length;i++)if(data[at+i]!=before[i])throw new InvalidDataException("예약 코드 검증 실패: "+at.ToString("X"));

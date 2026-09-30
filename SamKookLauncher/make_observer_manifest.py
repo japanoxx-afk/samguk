@@ -331,6 +331,42 @@ hook(0x42d5e8, 6, reset)
 # Enable only the host's own slot dropdown. Native host authority stays intact;
 # room_ui maps its selections to connected-human state 3, never open/CPU/closed.
 write(0x42d8f6, bytes.fromhex('6a01'))
+# Incoming snapshots re-disabled the local host dropdown after a guest joined.
+# Host authority is already checked at 42CF90; only remove the self-slot veto.
+write(0x42cf9f, bytes.fromhex('9090'))
+
+# Native fog is eight independent 232*232 byte planes, 0F=unseen.
+# Fill only connected observer planes on every peer after native fog reset.
+full_map = block('observer_full_map', f'''
+    rep stosd
+    pushfd
+    pushad
+    cld
+    cmp byte ptr [{ACTIVE}], 1
+    jne done
+    xor ebx, ebx
+next_slot:
+    cmp byte ptr [ebx+{ROLE}], 1
+    jne next
+    imul eax, ebx, 1124
+    cmp byte ptr [eax+0x49b046], 3
+    jne next
+    imul edi, ebx, 53824
+    add edi, 0x5173ea
+    xor eax, eax
+    mov ecx, 13456
+    rep stosd
+next:
+    inc ebx
+    cmp ebx, 8
+    jb next_slot
+done:
+    popad
+    popfd
+    mov word ptr [0x49d7b0], 8
+    jmp 0x442841
+''')
+hook(0x442836,11,full_map)
 
 encode = block('encode_role', f'''
     mov byte ptr [ebx+5], dl

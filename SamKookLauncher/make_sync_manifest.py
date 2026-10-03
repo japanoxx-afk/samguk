@@ -291,6 +291,49 @@ hook(0x438bdc,9,barrier_hash)
 compare_hash=block('compare_hash',f'''
  pushfd
  pushad
+ xor ecx, ecx
+departure_slot:
+ imul eax, ecx, 1124
+ cmp byte ptr [eax+0x49b046], 3
+ jne departure_next
+ imul eax, ecx, 1168
+ movzx edx, word ptr [eax+0x498722]
+ movzx ebp, word ptr [eax+0x498724]
+departure_scan:
+ cmp dx, bp
+ je departure_next
+ cmp word ptr [eax+edx*2+0x498726], 0
+ je departure_next
+ mov esi, dword ptr [eax+edx*4+0x4989a8]
+ mov ebx, dword ptr [esi]
+ and ebx, 0xff00
+ test ebx, 0x8000
+ jnz departure_boundary
+ inc edx
+ and edx, 0x7f
+ jmp departure_scan
+departure_boundary:
+ cmp ebx, 0x8100
+ jb departure_next
+ cmp ebx, 0x8400
+ ja departure_next
+ cmp ebx, 0x8100
+ jne control_payload
+ cmp byte ptr [esi+8], 10
+ jne departure_next
+ jmp control_ready
+control_payload:
+ cmp byte ptr [esi+8], 22
+ jne departure_next
+control_ready:
+ mov dword ptr [{STREAK}], 0
+ popad
+ popfd
+ ret
+departure_next:
+ inc ecx
+ cmp ecx, 8
+ jb departure_slot
  mov dword ptr [{VALID}], 0
  xor ecx, ecx
 slot:

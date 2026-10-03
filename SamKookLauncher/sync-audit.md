@@ -220,3 +220,41 @@ This is a reproduced causal defect and a targeted correction, but is NOT
 proof that it initiated the supplied match's divergence. Existing files lack
 occupancy grids, raw player resource values and first-divergence history.
 Do not disable the fail-stop or claim comprehensive resynchronization.
+
+## 2026-10-03 paired records and v1.14.4
+
+Both launchers confirmed v1.14.3 by user. Files contain multiple matches;
+matching used frame/reason/RNG and entity records, not the file timestamp.
+
+| Frame | Paired observation |
+| --- | --- |
+| 23721 | Reason 5, entity section; unit 257/type 31/owner 1 HP 119 vs 127; RNG identical |
+| 26568 | Reason 6 on both; compared core entity fields equal |
+| 25131 | Reason 6 on both; compared core entity fields equal |
+| 18462 | Reason 5, RNG section; RNG calls 2915 vs 2909, unit 270 HP 89 vs 83 |
+| 34164 | Reason 5, entity section; unit 54/type 16/owner 1 field 0x0C 17 vs 18; RNG identical |
+| 42894 | Reason 5, entity section; unit 320/type 13/owner 0 HP 24 vs 27; RNG identical |
+
+Timeout records at frames 16563/16566 show each side ready for itself only.
+These do not prove a specific router, transport or game-state cause. Earlier
+unpaired records cannot establish a causal sequence with a later match.
+
+The fingerprint comparator incorrectly required an 8000 hash packet when the
+native ready/consume loops accept other high-bit boundary packets. The native
+serializer emits 8100 with 10 bytes and 8200/8300/8400 with 22 bytes. The first
+three enter native departure handling; 8400 updates native check state. A
+ready group containing such a boundary need not contain an 8000 packet.
+
+sync_departure_test.py reproduces reason 6 on v1.14.3 with a valid departure.
+The fix preflights committed ring entries up to the first boundary, verifies
+the native control opcode/length, and defers the group to native processing.
+It does not skip past a preceding 8000 or suppress malformed 8000 packets.
+Native serializer lengths, actual native receiver handling, all three sender
+slots, ring wrap, unchanged player state during preflight, and continued
+mismatch/timeout fail-stop are tested. Profile bumps to sync-safety-16.
+
+This addresses a proven false-positive mechanism, not the separate HP/RNG
+divergence. The supplied schema-4 records have no preceding damage-command
+trace, resource/upgrade tables or projectile history. Root cause of those
+actual state differences remains unresolved; do not claim resynchronization
+or silently ignore those mismatches. Original .bin/.txt inputs are preserved.

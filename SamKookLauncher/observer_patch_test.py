@@ -315,7 +315,7 @@ def emulate(path):
     if image[0x39770]==0xe9:
         import hashlib
         selection=struct.unpack_from('<H',image,0x44556)[0]==36
-        profile='sync-safety-15;group-rally=1;placement-occupancy=1;observer-full-map=1;room-speed=1;orders=1;crowd-arrival=1;rally-exit=1;latency=True;selection36='+str(selection)+';rice=True;observer2=True'
+        profile='sync-safety-16;native-boundaries=1;group-rally=1;placement-occupancy=1;observer-full-map=1;room-speed=1;orders=1;crowd-arrival=1;rally-exit=1;latency=True;selection36='+str(selection)+';rice=True;observer2=True'
         expected_guid=hashlib.sha256(profile.encode()).digest()[:16]
     assert image[0x5f670:0x5f680]==expected_guid
     print('PASS isolated DirectPlay app GUID; component checks:',path)
